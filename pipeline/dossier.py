@@ -25,6 +25,7 @@ CHANNEL_NAMES = {
     "call": "Call",
 }
 RESEARCH_KINDS = ("platform", "talk", "article", "local_tie", "news", "hiring")
+DEMO_BANNER = "**Demo sender profile (config/sender.yaml).** The sender, results, and address in these drafts are made up. Don't send them."
 
 
 @dataclass
@@ -34,7 +35,7 @@ class DossierFiles:
     pdf: Path
 
 
-def build_blocks(session: Session, run: Run, rank: int, row: DigestRow) -> list[Block]:
+def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, demo: bool = False) -> list[Block]:
     score, lead, company = row.score, row.lead, row.company
     findings = {f.id: f for f in session.exec(select(Finding).where(Finding.lead_id == lead.id)).all()}
     steps = session.exec(
@@ -52,6 +53,7 @@ def build_blocks(session: Session, run: Run, rank: int, row: DigestRow) -> list[
     blocks: list[Block] = [
         # 1. Header
         Heading(1, lead.full_name),
+        *([Para(DEMO_BANNER)] if demo else []),
         Para(" · ".join(x for x in (lead.current_title, company.name if company else None, lead.location) if x)),
         Para(f"**Priority #{rank}** (score {score.priority_score:.0f}) · [Open in Sales Navigator]({row.url}) · "
              f"run {run.id}, {run.started_at[:10]}"),
@@ -159,11 +161,12 @@ def build_blocks(session: Session, run: Run, rank: int, row: DigestRow) -> list[
     return blocks
 
 
-def write_dossier(paths: Paths, session: Session, run: Run, rank: int, row: DigestRow) -> DossierFiles:
+def write_dossier(paths: Paths, session: Session, run: Run, rank: int, row: DigestRow,
+                  demo: bool = False) -> DossierFiles:
     out_dir = paths.run_output_dir(run) / f"run{run.id}"
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{rank:02d}-{_slug(row.lead.full_name)}-{_slug(row.company.name if row.company else 'unknown')}"
-    blocks = build_blocks(session, run, rank, row)
+    blocks = build_blocks(session, run, rank, row, demo)
     files = DossierFiles(out_dir / f"{stem}.md", out_dir / f"{stem}.docx", out_dir / f"{stem}.pdf")
     markdown = to_markdown(blocks)
     files.md.write_text(markdown)
@@ -181,7 +184,7 @@ def publish(paths: Paths, session: Session, run: Run, config: Config, *, mark: b
     as shown in this run's digest (stage 10 does; rebuilding an old run's documents doesn't)."""
     digest = build_digest(session, run, config)
     for rank, row in enumerate(digest.rows, 1):
-        files = write_dossier(paths, session, run, rank, row)
+        files = write_dossier(paths, session, run, rank, row, config.sender.demo)
         row.dossier = str(files.md.relative_to(paths.run_output_dir(run)))
         if mark:
             row.lead.last_in_digest_run_id = run.id
@@ -190,6 +193,7 @@ def publish(paths: Paths, session: Session, run: Run, config: Config, *, mark: b
         run.leads_qualified = len(digest.rows)
         session.add(run)
     session.commit()
+    digest.demo = config.sender.demo
     return digest, write_digest(paths, digest, session)
 
 

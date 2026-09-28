@@ -31,6 +31,7 @@ from pipeline.outreach_plan import (
 )
 from pipeline.research import published_email
 from pipeline.scoring.response import response_inputs
+from pipeline.text import strip_emoji
 
 
 class CommunicationStyle(BaseModel):
@@ -73,8 +74,8 @@ Rules:
    then a local tie.
 2. One low-friction ask per message: coffee in Austin when the lead is local, otherwise a 15-minute call or a
    one-line opinion question.
-3. Mirror the lead's communication style (formality, length, vocabulary, emoji use) while staying personable
-   and professional.
+3. Mirror the lead's communication style (formality, length, vocabulary) while staying personable and
+   professional. Never use emoji, even if the lead does.
 4. Grounded only. Every specific detail about the lead or their company must come from the numbered evidence,
    and each draft lists the ids it relies on in cited_finding_ids (at least one). Never invent mutual
    connections, shared history, familiarity, results, or clients. Facts about the sender come only from the
@@ -240,21 +241,22 @@ def brief(config: Config, lead: Lead, company: Company | None, evidence: list, s
 def store(ctx: RunContext, score: Score, lead: Lead, style: CommunicationStyle, writeup: LeadWriteup,
           plan: list[PlannedStep], problems: list[str]) -> None:
     lead.communication_style = style.model_dump()
-    score.reasons = [r.model_dump() for r in writeup.reasons]
-    score.writeup = {"person_summary": writeup.person_summary, "company_snapshot": writeup.company_snapshot,
-                     "talking_points": writeup.talking_points, "check_failures": problems}
+    score.reasons = [{"text": strip_emoji(r.text), "finding_ids": r.finding_ids} for r in writeup.reasons]
+    score.writeup = {"person_summary": strip_emoji(writeup.person_summary),
+                     "company_snapshot": strip_emoji(writeup.company_snapshot),
+                     "talking_points": [strip_emoji(t) for t in writeup.talking_points], "check_failures": problems}
     ctx.session.exec(delete(OutreachStep).where(OutreachStep.run_id == ctx.run.id, OutreachStep.lead_id == lead.id))
     drafts = {d.step_code: d for d in writeup.drafts}
     for step in plan:
         draft = drafts.get(step.code)
-        body = draft.body.strip() if draft else ""
+        body = strip_emoji(draft.body) if draft else ""
         if step.channel == "email" and body:
             body += email_footer(ctx.config.sender)
         failed = [p for p in problems if p.startswith(f"{step.code}:")]
         ctx.session.add(OutreachStep(
             run_id=ctx.run.id, lead_id=lead.id, step_code=step.code, channel=step.channel,
             planned_date=step.planned_date.isoformat(), angle=step.angle,
-            subject=draft.subject if draft else None, body=body or None,
+            subject=strip_emoji(draft.subject) if draft and draft.subject else None, body=body or None,
             cited_finding_ids=draft.cited_finding_ids if draft else [],
             checks_passed=draft is not None and not failed,
         ))

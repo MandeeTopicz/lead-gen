@@ -334,6 +334,7 @@ class Background(Strict):
 
 
 class SenderConfig(Strict):
+    demo: bool = False  # a fictional sender for testing: outputs carry a "do not send" banner
     sender: SenderIdentity
     offer: str = ""
     proof_points: list[str] = []

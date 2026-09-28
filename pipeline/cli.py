@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import subprocess
 import sys
 
 import anthropic
@@ -18,6 +19,7 @@ from pipeline.dossier import publish
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
 from pipeline.llm import check_access
+from pipeline import schedule
 from pipeline.notify import notify
 from pipeline.report import NoScores, match_report, write_report
 from pipeline.run import RunRefused, resume_run, run_lock, start_run
@@ -51,6 +53,12 @@ def main(argv: list[str] | None = None) -> int:
 
     commands.add_parser("check-llm", help="confirm the Anthropic API key in .env works")
 
+    schedule_cmd = commands.add_parser("schedule", help="the daily scheduled run (macOS launchd)")
+    schedule_cmd.add_argument("action", choices=["install", "remove", "status"])
+    schedule_cmd.add_argument("--at", default="07:30", help="24-hour local time for install, e.g. 07:30")
+
+    commands.add_parser("review", help="open the review screen in your browser")
+
     commands.add_parser("login", help="log in to Sales Navigator yourself in a visible browser window")
     commands.add_parser("check-session", help="load Sales Navigator once and report whether a run would pass")
 
@@ -81,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(markdown)
                 print(f"saved {write_report(paths, run, markdown)}")
                 return 0
+            case "schedule":
+                return _schedule(paths, args.action, args.at)
+            case "review":
+                return subprocess.call([sys.executable, "-m", "streamlit", "run", str(paths.root / "app" / "review.py")])
             case "check-llm":
                 return _check_llm(paths)
             case "login":
@@ -160,6 +172,17 @@ def _digest(paths: Paths, run_id: int | None) -> int:
         digest, path = publish(paths, session, run, config, mark=False)
         print(render(digest, session))
         print(f"saved {path} and {len(digest.rows)} dossiers in {path.parent / f'run{run.id}'}")
+    return 0
+
+
+def _schedule(paths: Paths, action: str, at: str) -> int:
+    if action == "install":
+        path = schedule.install(paths, at)
+        print(f"daily run scheduled at {at} ({path}); check with `leadgen schedule status`")
+    elif action == "remove":
+        print("schedule removed" if schedule.remove() else "nothing was scheduled")
+    else:
+        print(schedule.status())
     return 0
 
 

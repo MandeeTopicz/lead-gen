@@ -15,6 +15,7 @@ from sqlmodel import Session, col, select
 from db.models import Company, Finding, Lead, Post, Review, Run, Score, SearchHit
 from pipeline.collect import latest_cards
 from pipeline.config import Config
+from pipeline.text import strip_emoji
 from pipeline.context import Paths
 
 
@@ -36,6 +37,7 @@ class Digest:
     cuts: list[tuple[str, int]]  # what removed the most leads, when fewer than warn_below pass
     min_match: int
     warn_below: int
+    demo: bool = False
 
 
 def build_digest(session: Session, run: Run, config: Config) -> Digest:
@@ -139,6 +141,9 @@ def render(digest: Digest, session: Session) -> str:
         f"${run.llm_cost_usd:.2f} Claude",
         "",
     ]
+    if digest.demo:
+        lines += ["> **Demo sender profile.** Drafts in these dossiers use a made-up sender, results, and address. "
+                  "Don't send them.", ""]
     if digest.rows:
         lines += [
             "| # | Lead | Title | Company | Match | Response | Priority | Top reason | Dossier |",
@@ -159,7 +164,7 @@ def render(digest: Digest, session: Session) -> str:
         lines += [f"- {reason}: {n}" for reason, n in digest.cuts]
     if digest.held_back:
         lines += ["", "## Held back", ""]
-        lines += [f"- {_cell(lead.full_name)}: {reason}" for lead, reason in digest.held_back]
+        lines += [f"- {_cell(lead.full_name)}: {strip_emoji(reason)}" for lead, reason in digest.held_back]
     return "\n".join(lines) + "\n"
 
 
@@ -187,4 +192,4 @@ def _sentence(text: str) -> str:
 
 
 def _cell(value: object) -> str:
-    return "-" if value in (None, "") else str(value).replace("|", "\\|").replace("\n", " ")
+    return "-" if value in (None, "") else strip_emoji(str(value)).replace("|", "\\|").replace("\n", " ")

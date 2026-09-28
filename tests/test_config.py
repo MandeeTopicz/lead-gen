@@ -72,7 +72,8 @@ def test_unknown_criterion_in_a_search_is_rejected(paths):
         load_config(paths.config_dir)
 
 
-def test_stub_sender_lists_what_drafting_needs(paths):
+def test_empty_sender_lists_what_drafting_needs(paths):
+    (paths.config_dir / "sender.yaml").write_text("sender: {}\n")
     config = load_config(paths.config_dir)
     assert config.sender.missing_for_drafting() == [
         "sender.name",

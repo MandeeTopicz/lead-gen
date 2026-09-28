@@ -4,6 +4,7 @@ from sqlmodel import Session, col, select
 
 from db.models import Company, Lead, Run, Score, SearchHit
 from pipeline.context import Paths
+from pipeline.text import strip_emoji
 
 
 class NoScores(Exception):
@@ -47,7 +48,7 @@ def match_report(session: Session, run_id: int | None = None, details: bool = Fa
     if details:
         lines += ["", "## Breakdowns"]
         for rank, (score, lead) in enumerate(passed, 1):
-            lines += ["", f"### {rank}. {lead.full_name} — {score.match_score:.0f}", "", lead.profile_url, ""]
+            lines += ["", f"### {rank}. {strip_emoji(lead.full_name)} — {score.match_score:.0f}", "", lead.profile_url, ""]
             lines += ["| Criterion | Level | Points | Evidence | Source |", "| --- | --- | ---: | --- | --- |"]
             for c in score.match_breakdown["criteria"]:
                 lines.append(
@@ -92,4 +93,4 @@ def _company(session: Session, lead: Lead) -> str | None:
 
 
 def _cell(value: object) -> str:
-    return "-" if value in (None, "") else str(value).replace("|", "\\|").replace("\n", " ")
+    return "-" if value in (None, "") else strip_emoji(str(value)).replace("|", "\\|").replace("\n", " ")

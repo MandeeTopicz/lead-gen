@@ -11,6 +11,8 @@ import docx
 from docx.shared import Pt
 from markdown_pdf import MarkdownPdf, Section
 
+from pipeline.text import strip_emoji
+
 
 @dataclass
 class Heading:
@@ -53,9 +55,27 @@ blockquote { border-left: 2pt solid #999; margin: 4pt 0; padding-left: 8pt; colo
 """
 
 
+def clean(blocks: list[Block]) -> list[Block]:
+    """No emoji anywhere in generated documents."""
+    cleaned: list[Block] = []
+    for block in blocks:
+        match block:
+            case Heading(level, text):
+                cleaned.append(Heading(level, strip_emoji(text)))
+            case Para(text):
+                cleaned.append(Para(strip_emoji(text)))
+            case Bullets(items):
+                cleaned.append(Bullets([strip_emoji(i) for i in items]))
+            case Table(headers, rows):
+                cleaned.append(Table(headers, [[strip_emoji(c or "") for c in row] for row in rows]))
+            case Quote(lines):
+                cleaned.append(Quote([strip_emoji(line) for line in lines]))
+    return cleaned
+
+
 def to_markdown(blocks: list[Block]) -> str:
     out: list[str] = []
-    for block in blocks:
+    for block in clean(blocks):
         match block:
             case Heading(level, text):
                 out += [f"{'#' * level} {text}", ""]
@@ -76,7 +96,7 @@ def to_markdown(blocks: list[Block]) -> str:
 def write_docx(blocks: list[Block], path: Path) -> None:
     document = docx.Document()
     document.styles["Normal"].font.size = Pt(10)
-    for block in blocks:
+    for block in clean(blocks):
         match block:
             case Heading(level, text):
                 document.add_heading(_plain(text), level=min(level, 4))
@@ -101,8 +121,8 @@ def write_docx(blocks: list[Block], path: Path) -> None:
 
 def write_pdf(markdown: str, path: Path, title: str) -> None:
     pdf = MarkdownPdf(toc_level=0)
-    pdf.meta["title"] = title
-    pdf.add_section(Section(markdown, toc=False), user_css=PDF_CSS)
+    pdf.meta["title"] = strip_emoji(title)
+    pdf.add_section(Section(strip_emoji(markdown), toc=False), user_css=PDF_CSS)
     pdf.save(str(path))
 
 

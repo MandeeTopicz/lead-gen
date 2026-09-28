@@ -65,6 +65,7 @@ def test_flagged_drafts_say_why(paths):
 
 
 def test_without_sender_the_plan_explains_what_to_fill_in(paths):
+    (paths.config_dir / "sender.yaml").write_text("sender: {}\n")
     run = run_pipeline(paths, FakeWriter())
     md = next(run_dir(paths, run).glob("*.md")).read_text()
     assert "No drafts yet. Fill in config/sender.yaml" in md
@@ -79,3 +80,41 @@ def test_digest_command_rebuilds_without_marking(paths, monkeypatch, capsys):
     assert main(["digest", str(run.id)]) == 0
     assert len(list(run_dir(paths, run).iterdir())) == 3
     assert "1 dossiers" in capsys.readouterr().out
+
+
+def test_no_emoji_in_drafts_or_documents(paths):
+    with_sender(paths)
+
+    class Emoji(FakeWriter):
+        def parse(self, **kwargs):
+            result = super().parse(**kwargs)
+            if hasattr(result.parsed_output, "drafts"):
+                for d in result.parsed_output.drafts:
+                    d.body = "Congrats on Hutto 🎉 Worth comparing notes? 🚛"
+            return result
+
+    run = run_pipeline(paths, Emoji())
+    with Session(make_engine(paths.db_path)) as session:
+        from db.models import OutreachStep
+        bodies = [s.body for s in session.exec(select(OutreachStep)).all()]
+    assert bodies and all("🎉" not in b and "🚛" not in b for b in bodies)
+    assert bodies[0] == "Congrats on Hutto Worth comparing notes?"
+    md = next(run_dir(paths, run).glob("*.md")).read_text()
+    assert "🎉" not in md and "Congrats on Hutto Worth comparing notes?" in md
+
+
+def test_demo_sender_banner(paths):
+    import yaml
+    from tests.test_drafting import SENDER
+    (paths.config_dir / "sender.yaml").write_text(yaml.safe_dump({**SENDER, "demo": True}))
+    run = run_pipeline(paths, FakeWriter())
+    md = next(run_dir(paths, run).glob("*.md")).read_text()
+    digest = (paths.output_dir / run.started_at[:10] / f"digest-run{run.id}.md").read_text()
+    assert "Demo sender profile" in md and "Don't send them." in md
+    assert "Demo sender profile" in digest
+
+
+def test_shipped_demo_sender_is_complete_and_flagged(paths):
+    from pipeline.config import load_config
+    sender = load_config(paths.config_dir).sender
+    assert sender.demo and sender.missing_for_drafting() == []

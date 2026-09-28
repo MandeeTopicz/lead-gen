@@ -22,6 +22,8 @@ The agent uses its own Chrome profile, separate from your everyday one, and neve
 | `leadgen resume [RUN_ID] [--from-stage N]` | Continue a halted or failed run (defaults to the latest one, from its first unfinished stage). |
 | `leadgen digest [RUN_ID]` | Rebuild and print a run's digest and dossiers (latest completed run by default). |
 | `leadgen report [RUN_ID] [--details]` | Ranked match scores for a run (latest by default), with dropped leads and why; `--details` adds every lead's point breakdown. Also saved to `output/<run-date>/`. |
+| `leadgen review` | Open the review screen: each digest lead's dossier, copyable drafts, good fit / not a fit, outreach status, notes, run history, and a Run now button. |
+| `leadgen schedule install [--at 07:30] \| remove \| status` | The daily scheduled run as a macOS launchd job (runs once on wake if the Mac was asleep). |
 | `leadgen runs [--limit N]` | List recent runs with status, pages viewed, and where each stopped. |
 | `leadgen check-config` | Validate `config/icp.yaml` and `config/sender.yaml`. |
 | `leadgen check-llm` | Confirm the Anthropic API key in `.env` works with the configured models. |
@@ -34,9 +36,10 @@ Exit codes: `0` completed, `1` failed or refused, `2` halted and needs you (logi
 ## Layout
 
 - `config/icp.yaml`: the ICP, saved-search names, every weight, point value, threshold, and cap.
-- `config/sender.yaml`: who is sending and what they offer. Drafting needs it filled in.
+- `config/sender.yaml`: who is sending and what they offer. Ships with a fictional demo profile (`demo: true`) so the pipeline can run end to end; outputs carry a "don't send" banner until you replace it and set `demo: false`.
 - `pipeline/`: the orchestrator (`run.py`), the ten stages (`stages.py`), and the CLI.
 - `pipeline/linkedin/`: the browser session, the pacer every LinkedIn action goes through (delays, caps, halt checks), and the halt rules.
+- `app/review.py`: the Streamlit review screen (`pipeline/review.py` holds its data logic).
 - `db/`: SQLite schema. The database lives in `data/leadgen.db`.
 - `output/<run-date>/`: `digest.md` (the day's latest) and `digest-run<N>.md`, run logs, and `run<N>/` with one dossier per lead as `.md`, `.docx`, and `.pdf`. Copy drafts from the `.md` or `.docx`; the PDF can't show every emoji.
 - `.env`: `ANTHROPIC_API_KEY` for research and drafting (git-ignored; see `.env.example`).

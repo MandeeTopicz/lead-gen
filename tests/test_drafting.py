@@ -232,6 +232,7 @@ def test_still_failing_after_retry_is_flagged_not_dropped(paths):
 
 
 def test_without_sender_details_only_reasons_are_written(paths):
+    (paths.config_dir / "sender.yaml").write_text("sender: {}\n")
     run = run_pipeline(paths, FakeWriter())
     steps, score, *_ = stored(paths, run)
     assert steps == []

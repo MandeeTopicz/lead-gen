@@ -1,20 +1,31 @@
-# Who is reaching out. Drafting (iteration 7) refuses to run until the required fields are filled.
-# Affinity scoring compares leads against `background`.
+# Who is reaching out. Affinity scoring compares leads against `background`.
+#
+# DEMO PROFILE: a fictional sender that fits the Austin logistics ICP, so the whole pipeline can be tested end to
+# end. Every name, result, and address below is made up. While `demo: true`, every digest and dossier carries a
+# "do not send" banner. Replace this with your real details and set `demo: false` before sending anything.
+
+demo: true
 
 sender:
-  name: ""
-  title: ""
-  company: ""
-  email: ""
+  name: Riley Moss
+  title: Founder
+  company: Dockline Ops (demo)
+  email: riley@dockline-ops.example
   phone: ""
-  physical_address: ""   # required in every email (CAN-SPAM)
+  physical_address: "100 Example Street, Suite 000, Austin, TX 78701 (demo address)"
   local_to_austin: true
 
-offer: ""                # what you offer logistics ops leaders, in one or two sentences
-proof_points: []         # results you can cite, e.g. "Cut dock-to-stock time 30% for a 200-person 3PL"
-past_clients: []         # only clients you have permission to name
+offer: >-
+  Dock scheduling and yard visibility for mid-size 3PLs and carriers: drivers book arrival windows, the yard sees
+  what's coming, and ops leaders stop paying detention for trucks waiting at the gate.
+
+proof_points:
+  - "(demo) Cut detention fees 22% in one quarter for a 150-person Texas 3PL"
+  - "(demo) Brought average gate-to-dock time from 48 to 19 minutes at a two-site Central Texas carrier"
+
+past_clients: []   # never name clients in a demo
 
 background:
   employers: []
-  schools: []
-  communities: []        # groups, associations, local organizations
+  schools: ["The University of Texas at Austin", "Texas State University"]
+  communities: ["Austin Chamber of Commerce"]

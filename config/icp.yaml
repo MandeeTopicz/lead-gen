@@ -113,6 +113,10 @@ research:
   refresh_days: 30         # reuse a lead's research younger than this
   max_usd_per_run: 10.0    # stop researching once this run's research spend passes this
 
+# Stage 9: communication style (fast model) and reasons, summaries, and drafts (writer model).
+drafting:
+  max_usd_per_run: 5.0
+
 sequence:
   linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }
   email: { touches: 2, start_week: 6 }

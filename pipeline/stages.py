@@ -7,6 +7,7 @@ from pipeline.context import RunContext
 from pipeline.collect import collect_dedupe
 from pipeline.deep_read import deep_read
 from pipeline.digest import digest_stage
+from pipeline.drafting import drafting
 from pipeline.linkedin.searches import searches
 from pipeline.linkedin.session import session_check
 from pipeline.research import research
@@ -42,6 +43,6 @@ STAGES: list[Stage] = [
     Stage(6, "deep_read", deep_read, uses_linkedin=True),
     Stage(7, "research", research),
     Stage(8, "response_score", response_score),
-    Stage(9, "drafting", not_built),
+    Stage(9, "drafting", drafting),
     Stage(10, "digest", digest_stage),
 ]

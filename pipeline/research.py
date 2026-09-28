@@ -17,11 +17,9 @@ from sqlmodel import col, delete, select
 from db.models import Company, Finding, Lead, Score
 from pipeline.config import Research
 from pipeline.context import RunContext, now_iso
+from pipeline.llm import usage_cost
 
 SOURCE = "claude_web"
-# USD per million tokens (input, output). Cache writes bill at 1.25x input, cache reads at 0.1x.
-PRICES = {"claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5": (1.0, 5.0), "claude-opus-5": (5.0, 25.0)}
-WEB_SEARCH_USD = 10 / 1000
 MAX_CONTINUATIONS = 6
 
 # People-search and data-broker sites are out of scope (PRD: business contact info only).
@@ -178,7 +176,7 @@ def research_lead(client: Any, settings: Research, brief: str) -> tuple[Research
         response = client.messages.create(
             model=settings.model, max_tokens=16000, system=SYSTEM, tools=tools, messages=messages
         )
-        cost += _cost(settings.model, response.usage)
+        cost += usage_cost(settings.model, response.usage)
         record = next((b for b in response.content if b.type == "tool_use" and b.name == "record_findings"), None)
         if record is not None:
             try:
@@ -283,18 +281,6 @@ def published_email(findings: list[Finding]) -> Finding | None:
          and f.confidence in ("verified", "likely")),
         None,
     )
-
-
-def _cost(model: str, usage: Any) -> float:
-    price_in, price_out = PRICES.get(model, PRICES["claude-sonnet-5"])
-    tokens_in = (
-        (usage.input_tokens or 0)
-        + 1.25 * (getattr(usage, "cache_creation_input_tokens", 0) or 0)
-        + 0.1 * (getattr(usage, "cache_read_input_tokens", 0) or 0)
-    )
-    server = getattr(usage, "server_tool_use", None)
-    searches = (getattr(server, "web_search_requests", 0) or 0) if server else 0
-    return (tokens_in * price_in + (usage.output_tokens or 0) * price_out) / 1_000_000 + searches * WEB_SEARCH_USD
 
 
 def _fresh(timestamp: str | None, days: int) -> bool:

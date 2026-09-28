@@ -148,6 +148,7 @@ class Score(SQLModel, table=True):
     response_label: str | None = None
     priority_score: float | None = None
     reasons: list | None = json_column()  # [{text, finding_ids}]
+    writeup: dict | None = json_column()  # person_summary, company_snapshot, talking_points, check_failures
 
 
 class OutreachStep(SQLModel, table=True):

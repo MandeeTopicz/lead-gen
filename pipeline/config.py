@@ -221,6 +221,10 @@ class Research(Strict):
     max_usd_per_run: float = Field(ge=0)
 
 
+class Drafting(Strict):
+    max_usd_per_run: float = Field(ge=0)
+
+
 class LinkedInSequence(Strict):
     touches: int = Field(ge=0)
     per_week: int = Field(gt=0)
@@ -250,6 +254,7 @@ class IcpConfig(Strict):
     browser: Browser
     llm: Llm
     research: Research
+    drafting: Drafting
     sequence: Sequence
 
     @model_validator(mode="after")

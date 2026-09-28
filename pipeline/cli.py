@@ -1,7 +1,11 @@
 """leadgen command line. Exit codes: 0 completed, 1 failed or refused, 2 halted (needs you)."""
 
 import argparse
+import os
 import sys
+
+import anthropic
+from dotenv import load_dotenv
 
 from pydantic import ValidationError
 from sqlmodel import Session, col, select
@@ -11,6 +15,7 @@ from db.models import Run, RunStage
 from pipeline.config import load_config
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
+from pipeline.llm import check_access
 from pipeline.notify import notify
 from pipeline.report import NoScores, match_report, write_report
 from pipeline.run import RunRefused, resume_run, run_lock, start_run
@@ -39,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("run_id", nargs="?", type=int, help="defaults to the latest run with scores")
     report.add_argument("--details", action="store_true", help="include every lead's point breakdown")
 
+    commands.add_parser("check-llm", help="confirm the Anthropic API key in .env works")
+
     commands.add_parser("login", help="log in to Sales Navigator yourself in a visible browser window")
     commands.add_parser("check-session", help="load Sales Navigator once and report whether a run would pass")
 
@@ -48,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     paths = Paths.default()
+    load_dotenv(paths.root / ".env")
     try:
         match args.command:
             case "run":
@@ -66,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(markdown)
                 print(f"saved {write_report(paths, run, markdown)}")
                 return 0
+            case "check-llm":
+                return _check_llm(paths)
             case "login":
                 with run_lock(paths.lock_path):
                     login(paths, load_config(paths.config_dir))
@@ -128,6 +138,28 @@ def _list_runs(paths: Paths, limit: int) -> int:
                 f"  last stage={last.stage if last else '-'} {last.name if last else ''}"
                 + (f"  [{run.halt_reason}]" if run.halt_reason else "")
             )
+    return 0
+
+
+def _check_llm(paths: Paths) -> int:
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print(f"ANTHROPIC_API_KEY isn't set. Copy .env.example to {paths.root / '.env'} and add your key.")
+        return 1
+    try:
+        for line in check_access(load_config(paths.config_dir).icp.llm):
+            print(line)
+    except anthropic.AuthenticationError:
+        print("the API key was rejected; check ANTHROPIC_API_KEY in .env", file=sys.stderr)
+        return 1
+    except anthropic.PermissionDeniedError:
+        print("the API key doesn't have access to these models", file=sys.stderr)
+        return 1
+    except anthropic.NotFoundError as exc:
+        print(f"model not found: {exc.message}", file=sys.stderr)
+        return 1
+    except anthropic.APIConnectionError:
+        print("couldn't reach the Anthropic API; check your connection", file=sys.stderr)
+        return 1
     return 0
 
 

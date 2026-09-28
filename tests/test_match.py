@@ -54,6 +54,9 @@ def test_one_keyword_on_card_is_partial_credit(icp):
         ("VP Supply Chain", "partial", 12),
         ("Vice President, Logistics", "partial", 12),
         ("SVP Ops", "full", 20),
+        ("Vice President", "partial", 12),
+        ("VP", "partial", 12),
+        ("Senior Vice President", "partial", 12),
     ],
 )
 def test_role_levels(icp, title, level, points):
@@ -68,6 +71,8 @@ def test_role_levels(icp, title, level, points):
         ("Operations Manager", "director-level or below"),
         ("Coordinator, Dispatch", "isn't an operations leader"),
         ("Member | Board of Directors", "isn't an operations leader"),
+        ("VP of Sales", "isn't an operations leader"),
+        ("Vice President, Marketing", "isn't an operations leader"),
     ],
 )
 def test_role_gate_drops_non_leaders(icp, title, reason):

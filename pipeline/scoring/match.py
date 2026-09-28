@@ -13,6 +13,7 @@ from pipeline.config import CRITERIA, Criterion, IcpConfig
 
 Level = Literal["full", "partial", "none", "unknown"]
 LEVEL_RANK = {"full": 2, "partial": 1}
+BEST_OF = {"keywords", "size"}
 
 
 @dataclass
@@ -24,6 +25,7 @@ class LeadFacts:
     location: str | None = None
     months_at_company: int | None = None
     posted_within_days: int | None = None
+    no_recent_posts: bool = False  # a deep read showed no posts by the lead
     industry: str | None = None
     headcount: int | None = None
     company_type: str | None = None
@@ -110,6 +112,8 @@ def _role(facts: LeadFacts, icp: IcpConfig) -> tuple[Level, str] | None:
         return "full", facts.title
     if any(_contains_phrase(title, _normalize_title(t)) for t in icp.icp.gates.related_titles):
         return "partial", facts.title
+    if title in {_normalize_title(t) for t in icp.icp.gates.bare_titles}:
+        return "partial", facts.title
     return "none", facts.title
 
 
@@ -140,6 +144,8 @@ def _geography(facts: LeadFacts, icp: IcpConfig) -> tuple[Level, str] | None:
 
 
 def _activity(facts: LeadFacts, icp: IcpConfig) -> tuple[Level, str] | None:
+    if facts.no_recent_posts:
+        return "none", "no recent posts"
     if facts.posted_within_days is None:
         return None
     rules = icp.match_points.activity
@@ -217,8 +223,9 @@ def _resolve(
     max_points = getattr(icp.weights.match, criterion)
     if direct is not None:
         level, value = direct
-        # Keywords: the card shows only a slice of the profile, so a search's keyword filter can add to it.
-        if criterion == "keywords" and guaranteed and LEVEL_RANK[guaranteed[0]] > LEVEL_RANK.get(level, 0):
+        # Best of evidence and guarantee for two criteria: a card shows only a slice of the profile (keywords),
+        # and a company page counts LinkedIn members, not headcount, so it understates size.
+        if criterion in BEST_OF and guaranteed and LEVEL_RANK[guaranteed[0]] > LEVEL_RANK.get(level, 0):
             level, source = guaranteed[0], f"search:{guaranteed[1]}"
         else:
             source = facts.sources.get(criterion, "card")

@@ -4,11 +4,11 @@ Stage 3 records each parsed card as a search hit as soon as it's read (so a halt
 collected); this stage normalizes those hits into the leads and companies tables.
 """
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlmodel import Session, select
 
-from db.models import Company, Lead, Run, SearchHit
+from db.models import Company, Lead, Post, Run, SearchHit
 from pipeline.context import RunContext, now_iso
 from pipeline.linkedin.cards import (
     POSTED_RECENTLY,
@@ -18,6 +18,7 @@ from pipeline.linkedin.cards import (
     canonical_lead_url,
     tenure_months,
 )
+from pipeline.linkedin.profile_page import months_since
 from pipeline.scoring.match import LeadFacts
 
 
@@ -77,10 +78,52 @@ def facts_for_run(session: Session, run_id: int) -> dict[int, LeadFacts]:
     searches: dict[int, set[str]] = {}
     for hit in session.exec(select(SearchHit).where(SearchHit.run_id == run_id)).all():
         searches.setdefault(hit.lead_id, set()).add(hit.search_code)
-    return {
-        lead_id: facts_from_card(card, searches.get(lead_id, set()))
-        for lead_id, card in latest_cards(session, run_id).items()
-    }
+    facts = {}
+    for lead_id, card in latest_cards(session, run_id).items():
+        facts[lead_id] = facts_from_card(card, searches.get(lead_id, set()))
+        lead = session.get(Lead, lead_id)
+        if lead.last_deep_read_at:
+            posts = session.exec(select(Post).where(Post.lead_id == lead_id)).all()
+            add_profile_facts(facts[lead_id], lead, posts, card)
+        company = session.get(Company, lead.company_id) if lead.company_id else None
+        if company is not None and company.industry:
+            add_company_facts(facts[lead_id], company)
+    return facts
+
+
+def add_profile_facts(facts: LeadFacts, lead: Lead, posts: list[Post], card: Card) -> None:
+    """Confirmed data from the lead's full profile replaces what the card and searches implied."""
+    latest = max((p.posted_at for p in posts if p.posted_at), default=None)
+    if latest:
+        facts.posted_within_days = (datetime.now(UTC) - datetime.fromisoformat(latest)).days
+    else:
+        facts.no_recent_posts = True
+    facts.sources["activity"] = "profile"
+
+    # Tenure at the company: from the earliest role there (people are often promoted within a company).
+    company_id = canonical_company_url(card.company_url)
+    starts = [
+        role["start"]
+        for role in lead.experience or []
+        if role.get("start")
+        and ((company_id and role.get("company_url") == company_id) or role.get("company_name") == card.company_name)
+    ]
+    if starts:
+        facts.months_at_company = months_since(min(starts))
+        facts.sources["tenure"] = "profile"
+
+    texts = [lead.headline, lead.about] + [
+        f"{role.get('title') or ''} {role.get('description') or ''}" for role in (lead.experience or [])[:3]
+    ]
+    facts.keyword_text = " ".join(t for t in [facts.keyword_text, *texts] if t)
+    facts.sources["keywords"] = "profile"
+
+
+def add_company_facts(facts: LeadFacts, company: Company) -> None:
+    facts.industry = company.industry
+    facts.headcount = company.headcount
+    facts.keyword_text = " ".join(t for t in [facts.keyword_text, company.industry, company.description] if t)
+    facts.sources["industry"] = facts.sources["size"] = "company_page"
 
 
 def facts_from_card(card: Card, searches: set[str]) -> LeadFacts:

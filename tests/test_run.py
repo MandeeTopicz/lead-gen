@@ -51,7 +51,8 @@ def test_second_run_is_refused_while_lock_is_held(paths):
 
 
 def test_manual_runs_are_capped_per_day_and_dry_runs_do_not_count(paths):
-    stages = make_stages()
+    stages = make_stages(s3=lambda ctx: ctx.budget.use_page())  # runs that read search results
+    start_run(paths, stages=make_stages())  # read no results (e.g. stopped at login): not counted
     start_run(paths, dry_run=True, stages=stages)
     start_run(paths, stages=stages)
     start_run(paths, stages=stages)

@@ -132,7 +132,7 @@ def searches(ctx: RunContext) -> None:
 
 def run_searches(ctx: RunContext, pages: SavedSearchPages) -> None:
     per_search = ctx.config.icp.caps.pages_per_search
-    for code, search in ctx.config.icp.searches.items():
+    for code, search in ctx.config.icp.enabled_searches.items():
         viewed = found = 0
         try:
             pages.open(search.name)

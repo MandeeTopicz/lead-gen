@@ -8,6 +8,9 @@ icp:
     titles: ["COO", "Chief Operating Officer", "VP of Operations", "VP Operations",
              "Vice President of Operations", "SVP Operations", "Head of Operations"]
     related_titles: ["VP Logistics", "VP Supply Chain"]
+    # Partial credit only when this is the whole title: a bare "VP" from an Operations-function search is likely
+    # ops, but "VP of Sales" is not.
+    bare_titles: ["Vice President", "Senior Vice President", "Executive Vice President"]
     industries: ["Transportation, Logistics, Supply Chain and Storage",
                  "Truck Transportation", "Warehousing and Storage",
                  "Freight and Package Transportation"]
@@ -38,13 +41,16 @@ search_baseline: { role: full, industry: full, geography: full, activity: full, 
 # Saved searches in Sales Navigator, opened by exact name and never edited. Each one relaxes the baseline:
 # `drops` removes a filter, `widens` swaps it for the near-miss range (partial credit only).
 searches:
-  S1: { name: S1-strict }
-  S2: { name: S2-no-activity, drops: [activity] }
-  S3: { name: S3-no-tenure, drops: [tenure] }
-  S4: { name: S4-wider-size, widens: [size] }
-  S5: { name: S5-wider-area, widens: [geography] }
-  S6: { name: S6-no-keywords, drops: [keywords] }
-  S7: { name: S7-new-in-role, drops: [activity] }   # plus Spotlight: Changed jobs in past 90 days
+  # S1 filters title, industry, Greater Austin, 51-500 headcount, and privately held. It leaves tenure, activity,
+  # and keywords unfiltered so the pool isn't too small; the scorer judges those from each card.
+  S1: { name: S1-strict, drops: [activity, tenure, keywords] }
+  # Enable each one once it exists in Sales Navigator; a run halts on an enabled search it can't find.
+  S2: { name: S2-no-activity, drops: [activity], enabled: false }
+  S3: { name: S3-no-tenure, drops: [tenure], enabled: false }
+  S4: { name: S4-wider-size, widens: [size], enabled: false }
+  S5: { name: S5-wider-area, widens: [geography], enabled: false }
+  S6: { name: S6-no-keywords, drops: [keywords], enabled: false }
+  S7: { name: S7-new-in-role, drops: [activity], enabled: false }   # plus Spotlight: Changed jobs in past 90 days
 
 weights:
   match: { role: 20, industry: 18, geography: 16, activity: 14, tenure: 12,
@@ -79,6 +85,7 @@ caps:
   result_pages: 30
   pages_per_search: 4      # so later searches still run before the run-wide cap
   deep_reads: 40
+  deep_read_refresh_days: 30   # reuse a lead's or company's deep read younger than this
   scheduled_runs_per_day: 1
   manual_runs_per_day: 2
   delay_seconds: [4, 12]
@@ -88,6 +95,10 @@ browser:
   headless: true           # runs don't open a window; `leadgen login` always does
   start_url: https://www.linkedin.com/sales/home
   page_timeout_seconds: 45
+
+llm:
+  fast_model: claude-haiku-4-5    # classification and communication-style tagging
+  writer_model: claude-sonnet-5   # reasons, summaries, and drafted messages
 
 sequence:
   linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }

@@ -13,3 +13,16 @@ def paths(tmp_path: Path) -> Paths:
     """An isolated project root with the real config files and an empty data/ and output/."""
     shutil.copytree(REPO_ROOT / "config", tmp_path / "config")
     return Paths(tmp_path)
+
+
+@pytest.fixture
+def all_searches_enabled(paths: Paths) -> Paths:
+    """Tests that exercise all seven saved searches, whichever ones the shipped config has turned on."""
+    import yaml
+
+    icp_path = paths.config_dir / "icp.yaml"
+    data = yaml.safe_load(icp_path.read_text())
+    for search in data["searches"].values():
+        search["enabled"] = True
+    icp_path.write_text(yaml.safe_dump(data))
+    return paths

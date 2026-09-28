@@ -17,6 +17,7 @@ class Strict(BaseModel):
 class Gates(Strict):
     titles: list[str] = Field(min_length=1)
     related_titles: list[str] = []
+    bare_titles: list[str] = []
     industries: list[str] = Field(min_length=1)
     adjacent_industries: list[str] = []
 
@@ -64,6 +65,7 @@ Level = Literal["full", "partial"]
 
 class SavedSearch(Strict):
     name: str = Field(min_length=1)
+    enabled: bool = True
     drops: list[Criterion] = []
     widens: list[Criterion] = []
 
@@ -184,6 +186,7 @@ class Caps(Strict):
     result_pages: int = Field(ge=0)
     pages_per_search: int = Field(gt=0)
     deep_reads: int = Field(ge=0)
+    deep_read_refresh_days: int = Field(gt=0)
     scheduled_runs_per_day: int = Field(ge=0)
     manual_runs_per_day: int = Field(ge=0)
     delay_seconds: tuple[float, float]
@@ -201,6 +204,11 @@ class Browser(Strict):
     headless: bool
     start_url: str
     page_timeout_seconds: int = Field(gt=0)
+
+
+class Llm(Strict):
+    fast_model: str = Field(min_length=1)
+    writer_model: str = Field(min_length=1)
 
 
 class LinkedInSequence(Strict):
@@ -230,6 +238,7 @@ class IcpConfig(Strict):
     quality_bar: QualityBar
     caps: Caps
     browser: Browser
+    llm: Llm
     sequence: Sequence
 
     @model_validator(mode="after")
@@ -279,6 +288,10 @@ class IcpConfig(Strict):
         for criterion in search.widens:
             levels[criterion] = "partial"
         return levels
+
+    @property
+    def enabled_searches(self) -> dict[str, SavedSearch]:
+        return {code: search for code, search in self.searches.items() if search.enabled}
 
     @property
     def version_tag(self) -> str:

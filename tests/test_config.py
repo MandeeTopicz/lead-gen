@@ -57,7 +57,9 @@ def test_search_codes_must_look_like_s_numbers(paths):
 
 def test_search_guarantees_relax_the_baseline(paths):
     icp = load_config(paths.config_dir).icp
-    assert icp.guarantees("S1")["activity"] == "full"
+    assert icp.guarantees("S1")["industry"] == "full"
+    assert "activity" not in icp.guarantees("S1")  # S1 leaves activity, tenure, keywords unfiltered
+    assert icp.guarantees("S3")["activity"] == "full"
     assert "activity" not in icp.guarantees("S2")
     assert icp.guarantees("S4")["size"] == "partial"
     assert icp.guarantees("S5")["geography"] == "partial"

@@ -77,8 +77,8 @@ def stages_with_searches(results, seen=None):
         if seen is not None:
             seen.extend(fake.opened)
 
-    # Stage 2 is swapped out too: tests never open a browser or touch LinkedIn.
-    swapped = {2: lambda ctx: None, 3: searches}
+    # Stages 2 and 6 are swapped out too: tests never open a browser or touch LinkedIn.
+    swapped = {2: lambda ctx: None, 3: searches, 6: lambda ctx: None}
     return [Stage(s.number, s.name, swapped.get(s.number, s.run), s.uses_linkedin) for s in STAGES]
 
 
@@ -90,6 +90,11 @@ def empty_except(**named):
     results = {name: [[]] for name in ALL_SEARCHES}
     results.update(named)
     return results
+
+
+@pytest.fixture(autouse=True)
+def _all_searches(all_searches_enabled):
+    pass
 
 
 def db(paths):

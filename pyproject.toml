@@ -4,9 +4,11 @@ version = "0.1.0"
 description = "Finds, scores, and researches ICP leads in Sales Navigator and drafts outreach plans for human review."
 requires-python = ">=3.13"
 dependencies = [
+    "anthropic>=1.9.0",
     "beautifulsoup4>=4.15.0",
     "playwright>=1.63.0",
     "pydantic>=2.13.5",
+    "python-dotenv>=1.2.3",
     "pyyaml>=6.0.3",
     "sqlmodel>=0.0.47",
 ]

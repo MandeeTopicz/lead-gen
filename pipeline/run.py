@@ -209,7 +209,12 @@ def _check_daily_cap(session: Session, config: Config, trigger: str) -> None:
     count = session.exec(
         select(func.count())
         .select_from(Run)
-        .where(Run.trigger == trigger, Run.dry_run == False, col(Run.started_at).startswith(today))  # noqa: E712
+        .where(
+            Run.trigger == trigger,
+            Run.dry_run == False,  # noqa: E712
+            Run.pages_viewed > 0,  # a run that never read search results (e.g. halted at login) doesn't count
+            col(Run.started_at).startswith(today),
+        )
     ).one()
     if count >= limit:
         raise RunRefused(f"daily cap reached: {count}/{limit} {trigger} runs already started today")

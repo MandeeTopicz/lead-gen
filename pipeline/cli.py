@@ -13,6 +13,7 @@ from sqlmodel import Session, col, select
 from db import make_engine
 from db.models import Run, RunStage
 from pipeline.config import load_config
+from pipeline.digest import build_digest, render, write_digest
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
 from pipeline.llm import check_access
@@ -34,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     resume = commands.add_parser("resume", help="continue a halted or failed run")
     resume.add_argument("run_id", nargs="?", type=int, help="defaults to the latest halted or failed run")
     resume.add_argument("--from-stage", type=int, choices=range(1, 11), metavar="N")
+
+    digest_cmd = commands.add_parser("digest", help="rebuild and print a run's digest (latest run by default)")
+    digest_cmd.add_argument("run_id", nargs="?", type=int)
 
     runs = commands.add_parser("runs", help="list recent runs")
     runs.add_argument("--limit", type=int, default=10)
@@ -68,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
                 return _list_runs(paths, args.limit)
             case "check-config":
                 return _check_config(paths)
+            case "digest":
+                return _digest(paths, args.run_id)
             case "report":
                 with Session(make_engine(paths.db_path)) as session:
                     run, markdown = match_report(session, args.run_id, args.details)
@@ -138,6 +144,21 @@ def _list_runs(paths: Paths, limit: int) -> int:
                 f"  last stage={last.stage if last else '-'} {last.name if last else ''}"
                 + (f"  [{run.halt_reason}]" if run.halt_reason else "")
             )
+    return 0
+
+
+def _digest(paths: Paths, run_id: int | None) -> int:
+    config = load_config(paths.config_dir)
+    with Session(make_engine(paths.db_path)) as session:
+        run = session.get(Run, run_id) if run_id else session.exec(
+            select(Run).where(Run.status == "completed").order_by(col(Run.id).desc())
+        ).first()
+        if run is None:
+            print("no completed run yet", file=sys.stderr)
+            return 1
+        digest = build_digest(session, run, config)
+        print(render(digest, session))
+        print(f"saved {write_digest(paths, digest, session)}")
     return 0
 
 

@@ -180,6 +180,7 @@ class QualityBar(Strict):
     min_match: int = Field(ge=0, le=100)
     max_leads: int = Field(gt=0)
     warn_below: int = Field(ge=0)
+    suppress_days: int = Field(ge=0)
 
 
 class Caps(Strict):

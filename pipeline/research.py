@@ -270,10 +270,9 @@ def clean_findings(report: ResearchReport, company: Company | None) -> list[Find
         if key in seen:
             continue
         seen.add(key)
-        if reported.date and reported.kind != "email":
-            value = f"{value} ({reported.date})"
+        date = reported.date if reported.date and re.fullmatch(r"\d{4}-\d{2}(-\d{2})?", reported.date) else None
         kept.append(Finding(kind=reported.kind, value=value, source_url=reported.source_url,
-                            source_provider=provider, confidence=confidence))
+                            source_provider=provider, confidence=confidence, event_date=date))
     return kept
 
 

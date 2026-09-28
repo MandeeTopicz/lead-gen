@@ -79,7 +79,11 @@ response_points:
   new_in_role: { points: 10, within_months: 12 }
   labels: { high: 70, medium: 45 }
 
-quality_bar: { min_match: 60, max_leads: 25, warn_below: 10 }
+quality_bar:
+  min_match: 60
+  max_leads: 25
+  warn_below: 10
+  suppress_days: 30   # a lead in a digest this recently is left out unless something new happened
 
 caps:
   result_pages: 30

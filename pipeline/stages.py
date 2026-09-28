@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from pipeline.context import RunContext
 from pipeline.collect import collect_dedupe
 from pipeline.deep_read import deep_read
+from pipeline.digest import digest_stage
 from pipeline.linkedin.searches import searches
 from pipeline.linkedin.session import session_check
 from pipeline.research import research
 from pipeline.scoring.match_stage import match_score
+from pipeline.scoring.response import response_score
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ STAGES: list[Stage] = [
     Stage(5, "match_score", match_score),
     Stage(6, "deep_read", deep_read, uses_linkedin=True),
     Stage(7, "research", research),
-    Stage(8, "response_score", not_built),
+    Stage(8, "response_score", response_score),
     Stage(9, "drafting", not_built),
-    Stage(10, "dossiers", not_built),
+    Stage(10, "digest", digest_stage),
 ]

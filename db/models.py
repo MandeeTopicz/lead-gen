@@ -130,6 +130,7 @@ class Finding(SQLModel, table=True):
     source_url: str | None = None
     source_provider: str | None = None
     confidence: str
+    event_date: str | None = None  # YYYY-MM-DD of the news, post, or talk, when known
     found_at: str
     run_id: int | None = Field(default=None, foreign_key="runs.id")
 

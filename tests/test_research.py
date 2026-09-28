@@ -121,7 +121,8 @@ def test_cleaning_enforces_the_rules():
     assert ("email", "jordan.reyes@hillcountryfreight.com") in kept  # normalized
     assert not any("gmail" in v for _, v in kept)  # personal email dropped
     assert not any(k == "hiring" for k, _ in kept)  # no real source URL: dropped
-    assert kept[("news", "Opened a second cross-dock in Hutto. (2026-08-14)")].confidence == "verified"
+    news = kept[("news", "Opened a second cross-dock in Hutto.")]
+    assert (news.confidence, news.event_date) == ("verified", "2026-08-14")
     guessed = kept[("email", "ops@hillcountryfreight.com")]
     assert (guessed.confidence, guessed.source_provider) == ("likely", "claude_web:pattern")  # never verified
 

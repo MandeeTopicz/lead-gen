@@ -9,8 +9,10 @@ from sqlmodel import Session, col, select
 from db import make_engine
 from db.models import Run, RunStage
 from pipeline.config import load_config
-from pipeline.context import Paths
-from pipeline.run import RunRefused, resume_run, start_run
+from pipeline.context import Halt, Paths
+from pipeline.linkedin.session import LoginFailed, capture, check_session, login
+from pipeline.notify import notify
+from pipeline.run import RunRefused, resume_run, run_lock, start_run
 
 EXIT_CODES = {"completed": 0, "failed": 1, "halted": 2}
 
@@ -32,6 +34,13 @@ def main(argv: list[str] | None = None) -> int:
 
     commands.add_parser("check-config", help="validate config/icp.yaml and config/sender.yaml")
 
+    commands.add_parser("login", help="log in to Sales Navigator yourself in a visible browser window")
+    commands.add_parser("check-session", help="load Sales Navigator once and report whether a run would pass")
+
+    capture_cmd = commands.add_parser("capture", help="save a LinkedIn page as a local test fixture")
+    capture_cmd.add_argument("url")
+    capture_cmd.add_argument("name", help="file name without extension, e.g. search-results-1")
+
     args = parser.parse_args(argv)
     paths = Paths.default()
     try:
@@ -46,14 +55,36 @@ def main(argv: list[str] | None = None) -> int:
                 return _list_runs(paths, args.limit)
             case "check-config":
                 return _check_config(paths)
+            case "login":
+                with run_lock(paths.lock_path):
+                    login(paths, load_config(paths.config_dir))
+                return 0
+            case "check-session":
+                with run_lock(paths.lock_path):
+                    ok, message = check_session(paths, load_config(paths.config_dir))
+                print(message)
+                return 0 if ok else 2
+            case "capture":
+                with run_lock(paths.lock_path):
+                    saved = capture(paths, load_config(paths.config_dir), args.url, args.name)
+                print(f"saved {saved}")
+                return 0
+    except Halt as halt:
+        print(f"halted: {halt.reason}", file=sys.stderr)
+        return 2
+    except LoginFailed as failed:
+        print(f"login failed: {failed}", file=sys.stderr)
+        return 1
     except RunRefused as refused:
         print(f"refused: {refused}", file=sys.stderr)
         return 1
     except ValidationError as invalid:
         print(f"invalid config:\n{invalid}", file=sys.stderr)
         return 1
-    except Exception as exc:  # details are in the run log
-        print(f"run failed: {exc!r}", file=sys.stderr)
+    except Exception as exc:  # run details are in the run log
+        print(f"{args.command} failed: {exc!r}", file=sys.stderr)
+        if args.command in ("run", "resume"):
+            notify("Lead gen run failed", repr(exc))
         return 1
     return 0
 
@@ -62,6 +93,8 @@ def _report(run: Run) -> int:
     print(f"run {run.id}: {run.status}" + (f" ({run.halt_reason})" if run.halt_reason else ""))
     if run.halt_screenshot_path:
         print(f"screenshot: {run.halt_screenshot_path}")
+    if run.status == "halted":
+        notify("Lead gen run halted", run.halt_reason or "check the run log")
     return EXIT_CODES[run.status]
 
 

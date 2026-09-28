@@ -155,6 +155,11 @@ def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: lis
             run.id, run.pages_viewed, run.profiles_read, run.llm_cost_usd, run.enrichment_cost_usd,
         )
     finally:
+        for closer in reversed(ctx.closers):
+            try:
+                closer()
+            except Exception:
+                ctx.log.exception("cleanup failed")
         for handler in list(ctx.log.handlers):
             handler.close()
             ctx.log.removeHandler(handler)

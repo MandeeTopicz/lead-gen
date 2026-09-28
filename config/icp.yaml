@@ -69,6 +69,12 @@ caps:
   manual_runs_per_day: 2
   delay_seconds: [4, 12]
 
+browser:
+  channel: chrome          # installed Google Chrome; "chromium" uses Playwright's bundled build
+  headless: true           # runs don't open a window; `leadgen login` always does
+  start_url: https://www.linkedin.com/sales/home
+  page_timeout_seconds: 45
+
 sequence:
   linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }
   email: { touches: 2, start_week: 6 }

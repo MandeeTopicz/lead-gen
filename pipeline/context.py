@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,14 @@ class Paths:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "leadgen.db"
+
+    @property
+    def browser_profile_dir(self) -> Path:
+        return self.data_dir / "browser-profile"
+
+    @property
+    def captured_fixtures_dir(self) -> Path:
+        return self.root / "tests" / "fixtures" / "captured"
 
     @property
     def lock_path(self) -> Path:
@@ -100,6 +109,11 @@ class RunContext:
     log: logging.Logger
     # In-memory handoffs between stages within one process, e.g. the browser session.
     state: dict[str, Any] = field(default_factory=dict)
+    closers: list[Callable[[], None]] = field(default_factory=list)
+
+    def on_close(self, closer: Callable[[], None]) -> None:
+        """Register cleanup (e.g. closing the browser) to run when the run ends, however it ends."""
+        self.closers.append(closer)
 
     @property
     def dry_run(self) -> bool:

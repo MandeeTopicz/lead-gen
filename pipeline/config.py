@@ -1,6 +1,7 @@
 """Load and validate config/icp.yaml and config/sender.yaml."""
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -180,6 +181,13 @@ class Caps(Strict):
         return self
 
 
+class Browser(Strict):
+    channel: Literal["chrome", "chromium"]
+    headless: bool
+    start_url: str
+    page_timeout_seconds: int = Field(gt=0)
+
+
 class LinkedInSequence(Strict):
     touches: int = Field(ge=0)
     per_week: int = Field(gt=0)
@@ -205,6 +213,7 @@ class IcpConfig(Strict):
     response_points: ResponsePoints
     quality_bar: QualityBar
     caps: Caps
+    browser: Browser
     sequence: Sequence
 
     @model_validator(mode="after")

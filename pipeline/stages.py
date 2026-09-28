@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from pipeline.context import RunContext
+from pipeline.linkedin.session import session_check
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ SESSION_CHECK = 2
 
 STAGES: list[Stage] = [
     Stage(1, "trigger", trigger),
-    Stage(SESSION_CHECK, "session_check", not_built, uses_linkedin=True),
+    Stage(SESSION_CHECK, "session_check", session_check, uses_linkedin=True),
     Stage(3, "searches", not_built, uses_linkedin=True),
     Stage(4, "collect_dedupe", not_built),
     Stage(5, "match_score", not_built),

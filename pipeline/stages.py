@@ -4,7 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from pipeline.context import RunContext
+from pipeline.collect import collect_dedupe
 from pipeline.linkedin.session import session_check
+from pipeline.scoring.match_stage import match_score
 
 
 @dataclass(frozen=True)
@@ -30,8 +32,8 @@ STAGES: list[Stage] = [
     Stage(1, "trigger", trigger),
     Stage(SESSION_CHECK, "session_check", session_check, uses_linkedin=True),
     Stage(3, "searches", not_built, uses_linkedin=True),
-    Stage(4, "collect_dedupe", not_built),
-    Stage(5, "match_score", not_built),
+    Stage(4, "collect_dedupe", collect_dedupe),
+    Stage(5, "match_score", match_score),
     Stage(6, "deep_read", not_built, uses_linkedin=True),
     Stage(7, "research", not_built),
     Stage(8, "response_score", not_built),

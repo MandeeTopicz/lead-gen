@@ -16,22 +16,35 @@ icp:
     title_terms: ["assistant", "fractional", "consultant", "advisor"]
     company_types: ["Public Company"]
     max_headcount: 1000
-  geography: { primary: "Greater Austin", partial: "Texas" }
+  geography:
+    primary: "Greater Austin"
+    # Full credit when the location names Greater Austin, or one of these places plus Texas.
+    primary_places: ["Austin", "Round Rock", "Cedar Park", "Georgetown", "Pflugerville", "Leander",
+                     "San Marcos", "Kyle", "Buda", "Hutto", "Lakeway", "Bee Cave", "Dripping Springs",
+                     "Manor", "Taylor", "Bastrop", "Lockhart", "Elgin", "Liberty Hill", "West Lake Hills"]
+    partial: "Texas"
   tenure: { full_if_months_lt: 12, full_if_years_gte: 3 }
   company: { size_full: [51, 500], size_partial: [[11, 50], [501, 1000]], type: "Privately Held" }
   keywords: ["3PL", "third-party logistics", "freight", "last mile", "last-mile", "drayage",
              "brokerage", "warehousing", "fulfillment", "cold chain", "LTL", "FTL",
              "cross-dock", "supply chain"]
 
-# Search code -> saved-search name in Sales Navigator. The agent opens these by name and never edits them.
+# What the strict search's filters guarantee about every lead it returns. Scoring uses this as provisional
+# credit for criteria a result card doesn't show (industry, size, company type); card data always wins.
+# Keywords are "partial": the keyword filter is an OR, so it guarantees one match, not two.
+search_baseline: { role: full, industry: full, geography: full, activity: full, tenure: full,
+                   size: full, company_type: full, keywords: partial }
+
+# Saved searches in Sales Navigator, opened by exact name and never edited. Each one relaxes the baseline:
+# `drops` removes a filter, `widens` swaps it for the near-miss range (partial credit only).
 searches:
-  S1: S1-strict
-  S2: S2-no-activity
-  S3: S3-no-tenure
-  S4: S4-wider-size
-  S5: S5-wider-area
-  S6: S6-no-keywords
-  S7: S7-new-in-role
+  S1: { name: S1-strict }
+  S2: { name: S2-no-activity, drops: [activity] }
+  S3: { name: S3-no-tenure, drops: [tenure] }
+  S4: { name: S4-wider-size, widens: [size] }
+  S5: { name: S5-wider-area, widens: [geography] }
+  S6: { name: S6-no-keywords, drops: [keywords] }
+  S7: { name: S7-new-in-role, drops: [activity] }   # plus Spotlight: Changed jobs in past 90 days
 
 weights:
   match: { role: 20, industry: 18, geography: 16, activity: 14, tenure: 12,
@@ -64,6 +77,7 @@ quality_bar: { min_match: 60, max_leads: 25, warn_below: 10 }
 
 caps:
   result_pages: 30
+  pages_per_search: 4      # so later searches still run before the run-wide cap
   deep_reads: 40
   scheduled_runs_per_day: 1
   manual_runs_per_day: 2

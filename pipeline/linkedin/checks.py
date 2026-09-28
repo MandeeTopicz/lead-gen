@@ -28,6 +28,7 @@ HALT_STATUS: dict[int, str] = {
 # Matched case-insensitively against the page's visible text.
 HALT_PHRASES: list[tuple[str, str]] = [
     ("sign in to sales navigator", "logged out of Sales Navigator"),
+    ("two-step verification is now required", "LinkedIn requires two-step verification for Sales Navigator"),
     ("let's do a quick security check", "security verification prompt"),
     ("please complete this security check", "security verification prompt"),
     ("verify your identity", "identity verification prompt"),

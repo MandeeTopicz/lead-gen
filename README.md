@@ -20,6 +20,7 @@ The agent uses its own Chrome profile, separate from your everyday one, and neve
 | --- | --- |
 | `leadgen run [--trigger manual\|cron] [--dry-run]` | Start a run. Dry runs skip LinkedIn and paid APIs and don't count toward daily caps. |
 | `leadgen resume [RUN_ID] [--from-stage N]` | Continue a halted or failed run (defaults to the latest one, from its first unfinished stage). |
+| `leadgen report [RUN_ID] [--details]` | Ranked match scores for a run (latest by default), with dropped leads and why; `--details` adds every lead's point breakdown. Also saved to `output/<run-date>/`. |
 | `leadgen runs [--limit N]` | List recent runs with status, pages viewed, and where each stopped. |
 | `leadgen check-config` | Validate `config/icp.yaml` and `config/sender.yaml`. |
 | `leadgen login` | Open Sales Navigator in a visible window and wait while you log in. |

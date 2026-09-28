@@ -29,6 +29,7 @@ class Exclude(Strict):
 
 class Geography(Strict):
     primary: str
+    primary_places: list[str] = []
     partial: str
 
 
@@ -52,6 +53,19 @@ class IcpDefinition(Strict):
     tenure: Tenure
     company: Company
     keywords: list[str] = []
+
+
+Criterion = Literal["role", "industry", "geography", "activity", "tenure", "size", "company_type", "keywords"]
+CRITERIA: tuple[Criterion, ...] = (
+    "role", "industry", "geography", "activity", "tenure", "size", "company_type", "keywords",
+)
+Level = Literal["full", "partial"]
+
+
+class SavedSearch(Strict):
+    name: str = Field(min_length=1)
+    drops: list[Criterion] = []
+    widens: list[Criterion] = []
 
 
 class MatchWeights(Strict):
@@ -168,6 +182,7 @@ class QualityBar(Strict):
 
 class Caps(Strict):
     result_pages: int = Field(ge=0)
+    pages_per_search: int = Field(gt=0)
     deep_reads: int = Field(ge=0)
     scheduled_runs_per_day: int = Field(ge=0)
     manual_runs_per_day: int = Field(ge=0)
@@ -207,7 +222,8 @@ class Sequence(Strict):
 
 class IcpConfig(Strict):
     icp: IcpDefinition
-    searches: dict[str, str] = Field(min_length=1)
+    search_baseline: dict[Criterion, Level]
+    searches: dict[str, SavedSearch] = Field(min_length=1)
     weights: Weights
     match_points: MatchPoints
     response_points: ResponsePoints
@@ -243,11 +259,26 @@ class IcpConfig(Strict):
         return self
 
     @model_validator(mode="after")
+    def _baseline_covers_every_criterion(self):
+        missing = [c for c in CRITERIA if c not in self.search_baseline]
+        if missing:
+            raise ValueError(f"search_baseline is missing: {', '.join(missing)}")
+        return self
+
+    @model_validator(mode="after")
     def _search_codes(self):
         for code in self.searches:
             if not (code.startswith("S") and code[1:].isdigit()):
                 raise ValueError(f"search code {code!r} must look like S1, S2, ...")
         return self
+
+    def guarantees(self, search_code: str) -> dict[Criterion, Level]:
+        """What a lead returned by this saved search is known to satisfy, from the search's filters alone."""
+        search = self.searches[search_code]
+        levels = {c: level for c, level in self.search_baseline.items() if c not in search.drops}
+        for criterion in search.widens:
+            levels[criterion] = "partial"
+        return levels
 
     @property
     def version_tag(self) -> str:

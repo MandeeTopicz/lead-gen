@@ -12,6 +12,7 @@ from pipeline.config import load_config
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
 from pipeline.notify import notify
+from pipeline.report import NoScores, match_report, write_report
 from pipeline.run import RunRefused, resume_run, run_lock, start_run
 
 EXIT_CODES = {"completed": 0, "failed": 1, "halted": 2}
@@ -34,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
 
     commands.add_parser("check-config", help="validate config/icp.yaml and config/sender.yaml")
 
+    report = commands.add_parser("report", help="ranked match scores for a run, written to output/")
+    report.add_argument("run_id", nargs="?", type=int, help="defaults to the latest run with scores")
+    report.add_argument("--details", action="store_true", help="include every lead's point breakdown")
+
     commands.add_parser("login", help="log in to Sales Navigator yourself in a visible browser window")
     commands.add_parser("check-session", help="load Sales Navigator once and report whether a run would pass")
 
@@ -55,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
                 return _list_runs(paths, args.limit)
             case "check-config":
                 return _check_config(paths)
+            case "report":
+                with Session(make_engine(paths.db_path)) as session:
+                    run, markdown = match_report(session, args.run_id, args.details)
+                print(markdown)
+                print(f"saved {write_report(paths, run, markdown)}")
+                return 0
             case "login":
                 with run_lock(paths.lock_path):
                     login(paths, load_config(paths.config_dir))
@@ -74,6 +85,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except LoginFailed as failed:
         print(f"login failed: {failed}", file=sys.stderr)
+        return 1
+    except NoScores as missing:
+        print(missing, file=sys.stderr)
         return 1
     except RunRefused as refused:
         print(f"refused: {refused}", file=sys.stderr)

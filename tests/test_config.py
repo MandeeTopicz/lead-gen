@@ -50,8 +50,23 @@ def test_delay_range_must_be_ordered(paths):
 
 
 def test_search_codes_must_look_like_s_numbers(paths):
-    edit_icp(paths, lambda d: d["searches"].update(strict="S1-strict"))
+    edit_icp(paths, lambda d: d["searches"].update(strict={"name": "S1-strict"}))
     with pytest.raises(ValidationError, match="search code"):
+        load_config(paths.config_dir)
+
+
+def test_search_guarantees_relax_the_baseline(paths):
+    icp = load_config(paths.config_dir).icp
+    assert icp.guarantees("S1")["activity"] == "full"
+    assert "activity" not in icp.guarantees("S2")
+    assert icp.guarantees("S4")["size"] == "partial"
+    assert icp.guarantees("S5")["geography"] == "partial"
+    assert "keywords" not in icp.guarantees("S6")
+
+
+def test_unknown_criterion_in_a_search_is_rejected(paths):
+    edit_icp(paths, lambda d: d["searches"]["S2"].update(drops=["activty"]))
+    with pytest.raises(ValidationError, match="activty"):
         load_config(paths.config_dir)
 
 

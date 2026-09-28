@@ -41,6 +41,12 @@ def test_sales_navigator_sign_in_text_halts_on_any_url():
     )
 
 
+def test_two_step_verification_requirement_halts():
+    # Text from a real capture of the Sales Navigator interstitial.
+    text = "Two-step verification is now required to access Sales Navigator Protect your sensitive data"
+    assert detect_problem(HOME, 200, text) == "LinkedIn requires two-step verification for Sales Navigator"
+
+
 def test_restriction_notice_halts():
     assert check(HOME, "restricted") == "account restricted"
 

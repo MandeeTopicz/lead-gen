@@ -271,7 +271,7 @@ def _role_gate_reason(facts: LeadFacts) -> str:
     title = (facts.title or "").lower()
     if not title:
         return "no title"
-    if "director" in title or "manager" in title:
+    if re.search(r"\b(director|manager)\b", title):  # "Board of Directors" isn't a director-level role
         return f"director-level or below ({facts.title})"
     return f"title isn't an operations leader ({facts.title})"
 

@@ -67,6 +67,7 @@ def test_role_levels(icp, title, level, points):
         ("Director of Operations", "director-level or below"),
         ("Operations Manager", "director-level or below"),
         ("Coordinator, Dispatch", "isn't an operations leader"),
+        ("Member | Board of Directors", "isn't an operations leader"),
     ],
 )
 def test_role_gate_drops_non_leaders(icp, title, reason):

@@ -10,8 +10,8 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict
 
 # Normalized spotlight badges the parser emits.
-POSTED_RECENTLY = "posted_on_linkedin"  # "Posted on LinkedIn" = posted in the past 30 days
-CHANGED_JOBS = "changed_jobs"  # changed jobs in the past 90 days
+POSTED_RECENTLY = "posted_on_linkedin"  # "N recent posts on LinkedIn" = posted in the past 30 days
+CHANGED_JOBS = "changed_jobs"  # Sales Navigator's "recently hired": changed jobs in the past 90 days
 POSTED_RECENTLY_DAYS = 30
 
 
@@ -27,6 +27,7 @@ class Card(BaseModel):
     time_in_role: str | None = None  # raw card text, e.g. "2 years 3 months in role"
     time_in_company: str | None = None  # e.g. "5 years 1 month in company"
     connection_degree: int | None = None
+    mutual_connections: int | None = None
     spotlights: list[str] = []
     about: str | None = None
 

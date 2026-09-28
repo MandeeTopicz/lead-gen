@@ -13,6 +13,7 @@ import yaml
 from pipeline.config import load_config
 from pipeline.linkedin.session import LoginFailed, LinkedInBrowser, login
 from pipeline.run import start_run
+from pipeline.stages import STAGES, Stage
 from tests.linkedin_pages import fixture_html
 
 pytestmark = [
@@ -75,6 +76,11 @@ def server():
     httpd.shutdown()
 
 
+def session_only():
+    """Real stages 1-2; later stages would need a full fake Sales Navigator."""
+    return [s if s.number <= 2 else Stage(s.number, s.name, lambda ctx: None, s.uses_linkedin) for s in STAGES]
+
+
 def point_browser_at(paths, start_url):
     icp_path = paths.config_dir / "icp.yaml"
     data = yaml.safe_load(icp_path.read_text())
@@ -86,14 +92,14 @@ def point_browser_at(paths, start_url):
 
 def test_session_check_passes_on_sales_navigator(paths, server):
     point_browser_at(paths, f"{server}/sales/home")
-    run = start_run(paths)
+    run = start_run(paths, stages=session_only())
     assert run.status == "completed"
     assert (paths.browser_profile_dir / "Default").exists()
 
 
 def test_session_check_halts_on_redirect_to_checkpoint(paths, server):
     point_browser_at(paths, f"{server}/sales/home-logged-out")
-    run = start_run(paths)
+    run = start_run(paths, stages=session_only())
     assert run.status == "halted"
     assert run.halt_reason == "LinkedIn security checkpoint"
     screenshot = Path(run.halt_screenshot_path)
@@ -103,7 +109,7 @@ def test_session_check_halts_on_redirect_to_checkpoint(paths, server):
 
 def test_session_check_halts_without_session_cookie(paths, server):
     point_browser_at(paths, f"{server}/sales/home-no-cookie")
-    run = start_run(paths)
+    run = start_run(paths, stages=session_only())
     assert run.status == "halted"
     assert "no LinkedIn session cookie" in run.halt_reason
 
@@ -144,3 +150,11 @@ def test_login_reports_a_closed_window(paths, server, monkeypatch):
     monkeypatch.setattr("pipeline.linkedin.session.time.sleep", lambda seconds: opened[0].page.close())
     with pytest.raises(LoginFailed, match="closed before login finished"):
         login(paths, config, timeout_seconds=30, headless=True)
+
+
+def test_searches_halt_when_the_saved_searches_link_is_missing(paths, server):
+    point_browser_at(paths, f"{server}/sales/home")  # the fake home page has no Saved searches link
+    stages = [s if s.number <= 3 else Stage(s.number, s.name, lambda ctx: None, s.uses_linkedin) for s in STAGES]
+    run = start_run(paths, stages=stages)
+    assert run.status == "halted"
+    assert "Saved searches link wasn't found" in run.halt_reason

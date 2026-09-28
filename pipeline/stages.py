@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from pipeline.context import RunContext
 from pipeline.collect import collect_dedupe
+from pipeline.linkedin.searches import searches
 from pipeline.linkedin.session import session_check
 from pipeline.scoring.match_stage import match_score
 
@@ -31,7 +32,7 @@ SESSION_CHECK = 2
 STAGES: list[Stage] = [
     Stage(1, "trigger", trigger),
     Stage(SESSION_CHECK, "session_check", session_check, uses_linkedin=True),
-    Stage(3, "searches", not_built, uses_linkedin=True),
+    Stage(3, "searches", searches, uses_linkedin=True),
     Stage(4, "collect_dedupe", collect_dedupe),
     Stage(5, "match_score", match_score),
     Stage(6, "deep_read", not_built, uses_linkedin=True),

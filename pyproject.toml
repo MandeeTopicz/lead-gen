@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Finds, scores, and researches ICP leads in Sales Navigator and drafts outreach plans for human review."
 requires-python = ">=3.13"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "playwright>=1.63.0",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",

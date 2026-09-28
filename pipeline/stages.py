@@ -8,6 +8,7 @@ from pipeline.collect import collect_dedupe
 from pipeline.deep_read import deep_read
 from pipeline.linkedin.searches import searches
 from pipeline.linkedin.session import session_check
+from pipeline.research import research
 from pipeline.scoring.match_stage import match_score
 
 
@@ -37,7 +38,7 @@ STAGES: list[Stage] = [
     Stage(4, "collect_dedupe", collect_dedupe),
     Stage(5, "match_score", match_score),
     Stage(6, "deep_read", deep_read, uses_linkedin=True),
-    Stage(7, "research", not_built),
+    Stage(7, "research", research),
     Stage(8, "response_score", not_built),
     Stage(9, "drafting", not_built),
     Stage(10, "dossiers", not_built),

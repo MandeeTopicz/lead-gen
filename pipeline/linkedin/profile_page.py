@@ -42,6 +42,7 @@ class LeadProfile(BaseModel):
 
 
 class CompanyProfile(BaseModel):
+    website: str | None = None
     industry: str | None = None
     headcount: int | None = None
     revenue: str | None = None
@@ -85,7 +86,9 @@ def parse_company_page(html: str) -> CompanyProfile:
 
     size = first("company-size")
     count = re.search(r"([\d,]+)", size or "")
+    website = soup.select_one('a[data-control-name="visit_company_website"][href^="http"]')
     return CompanyProfile(
+        website=website["href"] if website is not None else None,
         industry=first("industry"),
         headcount=int(count.group(1).replace(",", "")) if count else None,
         revenue=first("revenue"),

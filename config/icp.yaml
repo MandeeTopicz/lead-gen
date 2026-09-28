@@ -100,6 +100,15 @@ llm:
   fast_model: claude-haiku-4-5    # classification and communication-style tagging
   writer_model: claude-sonnet-5   # reasons, summaries, and drafted messages
 
+# Stage 7: Claude researches each top lead with its built-in web search and web fetch (no other vendors).
+research:
+  model: claude-sonnet-5
+  max_leads: 25            # best-matching leads that passed the gates
+  max_searches: 5          # per lead
+  max_fetches: 4           # per lead (company site about, contact, and careers pages)
+  refresh_days: 30         # reuse a lead's research younger than this
+  max_usd_per_run: 10.0    # stop researching once this run's research spend passes this
+
 sequence:
   linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }
   email: { touches: 2, start_week: 6 }

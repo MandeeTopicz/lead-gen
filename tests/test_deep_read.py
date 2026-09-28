@@ -173,6 +173,7 @@ def test_deep_read_rescores_on_confirmed_data(paths):
         assert len(session.exec(select(Post).where(Post.lead_id == lead.id)).all()) == 1  # comments don't count
         company = session.exec(select(Company).where(Company.name == "Hill Country Freight")).one()
         assert (company.industry, company.headcount) == ("Truck Transportation", 184)
+        assert company.domain == "hillcountryfreight.example"
 
 
 def test_no_recent_posts_means_no_activity_credit(paths):

@@ -8,6 +8,12 @@ from pipeline.context import Paths
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _no_real_api_calls(monkeypatch):
+    """Tests never reach the paid Anthropic API, even if a key is exported in the shell."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
 @pytest.fixture
 def paths(tmp_path: Path) -> Paths:
     """An isolated project root with the real config files and an empty data/ and output/."""

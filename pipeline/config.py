@@ -211,6 +211,15 @@ class Llm(Strict):
     writer_model: str = Field(min_length=1)
 
 
+class Research(Strict):
+    model: str = Field(min_length=1)
+    max_leads: int = Field(ge=0)
+    max_searches: int = Field(gt=0)
+    max_fetches: int = Field(ge=0)
+    refresh_days: int = Field(gt=0)
+    max_usd_per_run: float = Field(ge=0)
+
+
 class LinkedInSequence(Strict):
     touches: int = Field(ge=0)
     per_week: int = Field(gt=0)
@@ -239,6 +248,7 @@ class IcpConfig(Strict):
     caps: Caps
     browser: Browser
     llm: Llm
+    research: Research
     sequence: Sequence
 
     @model_validator(mode="after")

@@ -6,6 +6,7 @@ within `caps.deep_read_refresh_days` is not read again; its stored data is reuse
 
 import random
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from playwright.sync_api import Page
 from sqlmodel import col, delete, select
@@ -75,6 +76,8 @@ def store_profile(session, lead: Lead, profile: LeadProfile) -> None:
 
 
 def store_company(company: Company, profile: CompanyProfile) -> None:
+    if profile.website:
+        company.domain = urlparse(profile.website).netloc.removeprefix("www.") or company.domain
     company.industry = profile.industry
     company.headcount = profile.headcount
     company.headcount_growth_6mo = profile.growth_6mo

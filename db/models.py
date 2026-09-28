@@ -90,6 +90,7 @@ class Lead(SQLModel, table=True):
     communication_style: dict | None = json_column()  # formality, length, emoji use
     first_seen_run_id: int | None = Field(default=None, foreign_key="runs.id")
     last_deep_read_at: str | None = None
+    last_researched_at: str | None = None
     last_in_digest_run_id: int | None = Field(default=None, foreign_key="runs.id")
 
 
@@ -124,7 +125,7 @@ class Finding(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     lead_id: int | None = Field(default=None, foreign_key="leads.id")
     company_id: int | None = Field(default=None, foreign_key="companies.id")
-    kind: str  # email, phone, platform, talk, article, hiring, news, local_tie, affinity
+    kind: str  # email, phone, platform, talk, article, hiring, news, local_tie, affinity, company
     value: str
     source_url: str | None = None
     source_provider: str | None = None

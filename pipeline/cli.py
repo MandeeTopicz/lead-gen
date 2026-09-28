@@ -13,7 +13,8 @@ from sqlmodel import Session, col, select
 from db import make_engine
 from db.models import Run, RunStage
 from pipeline.config import load_config
-from pipeline.digest import build_digest, render, write_digest
+from pipeline.digest import render
+from pipeline.dossier import publish
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
 from pipeline.llm import check_access
@@ -36,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     resume.add_argument("run_id", nargs="?", type=int, help="defaults to the latest halted or failed run")
     resume.add_argument("--from-stage", type=int, choices=range(1, 11), metavar="N")
 
-    digest_cmd = commands.add_parser("digest", help="rebuild and print a run's digest (latest run by default)")
+    digest_cmd = commands.add_parser("digest", help="rebuild a run's digest and dossiers (latest run by default)")
     digest_cmd.add_argument("run_id", nargs="?", type=int)
 
     runs = commands.add_parser("runs", help="list recent runs")
@@ -156,9 +157,9 @@ def _digest(paths: Paths, run_id: int | None) -> int:
         if run is None:
             print("no completed run yet", file=sys.stderr)
             return 1
-        digest = build_digest(session, run, config)
+        digest, path = publish(paths, session, run, config, mark=False)
         print(render(digest, session))
-        print(f"saved {write_digest(paths, digest, session)}")
+        print(f"saved {path} and {len(digest.rows)} dossiers in {path.parent / f'run{run.id}'}")
     return 0
 
 

@@ -6,8 +6,10 @@ requires-python = ">=3.13"
 dependencies = [
     "anthropic>=1.9.0",
     "beautifulsoup4>=4.15.0",
+    "markdown-pdf>=1.13.3",
     "playwright>=1.63.0",
     "pydantic>=2.13.5",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.3",
     "pyyaml>=6.0.3",
     "sqlmodel>=0.0.47",
@@ -31,3 +33,4 @@ packages = ["pipeline", "db"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["browser: drives real Chrome against a local fake server (no LinkedIn)"]
+filterwarnings = ["ignore:builtin type swig:DeprecationWarning"]

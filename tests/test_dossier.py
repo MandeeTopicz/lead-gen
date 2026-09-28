@@ -1,0 +1,81 @@
+"""Stage 10: dossiers (Markdown, DOCX, PDF) and the digest linking to them. Fakes only."""
+
+import docx
+from sqlmodel import Session, select
+
+from db import make_engine
+from db.models import Dossier
+from pipeline.cli import main
+from tests.test_drafting import FakeWriter, run_pipeline, with_sender
+
+SECTIONS = ["Scores", "Why this lead", "Person", "Company", "Research findings", "Contact info",
+            "Affinity and warm paths", "Talking points", "Outreach plan", "Sources"]
+
+
+def run_dir(paths, run):
+    return paths.output_dir / run.started_at[:10] / f"run{run.id}"
+
+
+def test_dossier_has_every_section_in_three_formats(paths):
+    with_sender(paths)
+    run = run_pipeline(paths, FakeWriter())
+    files = sorted(run_dir(paths, run).iterdir())
+    assert [f.name for f in files] == ["01-jordan-reyes-hill-country-freight.docx",
+                                       "01-jordan-reyes-hill-country-freight.md",
+                                       "01-jordan-reyes-hill-country-freight.pdf"]
+    md = files[1].read_text()
+    assert md.startswith("# Jordan Reyes\n")
+    for section in SECTIONS:
+        assert f"\n## {section}\n" in md, section
+    assert "### L1 · " in md and "(recommended first message)" in md
+    assert "> Subject: Hutto cross-dock" in md and "100 Congress Ave" in md  # email with its footer
+    assert "[hcf.example/team](https://hcf.example/team)" in md  # sourced contact info
+    assert "likely, published" in md
+
+    headings = [p.text for p in docx.Document(files[0]).paragraphs if p.style.name.startswith("Heading")]
+    assert all(section in headings for section in SECTIONS)
+    assert files[2].read_bytes().startswith(b"%PDF") and files[2].stat().st_size > 10_000
+
+    with Session(make_engine(paths.db_path)) as session:
+        dossier = session.exec(select(Dossier)).one()
+        assert (dossier.rank, dossier.md_path) == (1, str(files[1]))
+
+
+def test_digest_links_each_dossier(paths):
+    with_sender(paths)
+    run = run_pipeline(paths, FakeWriter())
+    digest = (paths.output_dir / run.started_at[:10] / f"digest-run{run.id}.md").read_text()
+    assert f"[open](run{run.id}/01-jordan-reyes-hill-country-freight.md)" in digest
+
+
+def test_flagged_drafts_say_why(paths):
+    with_sender(paths)
+
+    class Stubborn(FakeWriter):
+        def parse(self, **kwargs):
+            result = super().parse(**kwargs)
+            if hasattr(result.parsed_output, "drafts"):
+                result.parsed_output.drafts[2].body = "Hi [First Name]!"
+            return result
+
+    run = run_pipeline(paths, Stubborn())
+    md = next(run_dir(paths, run).glob("*.md")).read_text()
+    assert "| L3 | " in md and "needs review" in md
+    assert "**Needs review:** unfilled placeholder '[First Name]'." in md
+
+
+def test_without_sender_the_plan_explains_what_to_fill_in(paths):
+    run = run_pipeline(paths, FakeWriter())
+    md = next(run_dir(paths, run).glob("*.md")).read_text()
+    assert "No drafts yet. Fill in config/sender.yaml" in md
+
+
+def test_digest_command_rebuilds_without_marking(paths, monkeypatch, capsys):
+    with_sender(paths)
+    run = run_pipeline(paths, FakeWriter())
+    for f in run_dir(paths, run).iterdir():
+        f.unlink()
+    monkeypatch.setenv("LEADGEN_ROOT", str(paths.root))
+    assert main(["digest", str(run.id)]) == 0
+    assert len(list(run_dir(paths, run).iterdir())) == 3
+    assert "1 dossiers" in capsys.readouterr().out

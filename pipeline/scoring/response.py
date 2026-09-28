@@ -27,6 +27,7 @@ class ResponseInputs:
     in_primary_area: bool
     months_at_company: int | None
     findings: list[Finding] = field(default_factory=list)
+    post_date_exact: bool = True  # False: only LinkedIn's "recent posts" badge, meaning within 30 days
 
 
 @dataclass
@@ -57,7 +58,9 @@ def score_response(inputs: ResponseInputs, config: Config) -> ResponseResult:
     else:
         earned = next((p for limit, p in ((7, rules.within_7_days), (30, rules.within_30_days),
                                           (90, rules.within_90_days)) if days <= limit), 0)
-        add("activity", earned, weights.activity, f"last post {days} days ago")
+        detail = f"last post {days} days ago" if inputs.post_date_exact else \
+            f"posted within the last {days} days (LinkedIn badge)"
+        add("activity", earned, weights.activity, detail)
 
     # Affinity and warm paths
     affinity_findings = [f for f in usable if f.kind == "affinity"]
@@ -151,6 +154,7 @@ def response_inputs(session: Session, lead: Lead, card: Card, facts: LeadFacts, 
     findings = session.exec(select(Finding).where(Finding.lead_id == lead.id)).all()
     return ResponseInputs(
         days_since_post=None if facts.no_recent_posts else days,
+        post_date_exact=latest is not None,
         mutual_connections=card.mutual_connections or 0,
         connection_degree=card.connection_degree,
         shared_background=shared_background(lead, config),

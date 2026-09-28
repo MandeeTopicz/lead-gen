@@ -20,9 +20,11 @@ The agent uses its own Chrome profile, separate from your everyday one, and neve
 | --- | --- |
 | `leadgen run [--trigger manual\|cron] [--dry-run]` | Start a run. Dry runs skip LinkedIn and paid APIs and don't count toward daily caps. |
 | `leadgen resume [RUN_ID] [--from-stage N]` | Continue a halted or failed run (defaults to the latest one, from its first unfinished stage). |
+| `leadgen digest [RUN_ID]` | Rebuild and print a run's digest and dossiers (latest completed run by default). |
 | `leadgen report [RUN_ID] [--details]` | Ranked match scores for a run (latest by default), with dropped leads and why; `--details` adds every lead's point breakdown. Also saved to `output/<run-date>/`. |
 | `leadgen runs [--limit N]` | List recent runs with status, pages viewed, and where each stopped. |
 | `leadgen check-config` | Validate `config/icp.yaml` and `config/sender.yaml`. |
+| `leadgen check-llm` | Confirm the Anthropic API key in `.env` works with the configured models. |
 | `leadgen login` | Open Sales Navigator in a visible window and wait while you log in. |
 | `leadgen check-session` | Load Sales Navigator once, outside any run, and report whether a run would pass stage 2. |
 | `leadgen capture URL NAME` | Save a LinkedIn page's HTML and screenshot to `tests/fixtures/captured/` (git-ignored: it holds real people's data). |
@@ -36,7 +38,8 @@ Exit codes: `0` completed, `1` failed or refused, `2` halted and needs you (logi
 - `pipeline/`: the orchestrator (`run.py`), the ten stages (`stages.py`), and the CLI.
 - `pipeline/linkedin/`: the browser session, the pacer every LinkedIn action goes through (delays, caps, halt checks), and the halt rules.
 - `db/`: SQLite schema. The database lives in `data/leadgen.db`.
-- `output/<run-date>/`: run logs now; digests and dossiers later.
+- `output/<run-date>/`: `digest.md` (the day's latest) and `digest-run<N>.md`, run logs, and `run<N>/` with one dossier per lead as `.md`, `.docx`, and `.pdf`. Copy drafts from the `.md` or `.docx`; the PDF can't show every emoji.
+- `.env`: `ANTHROPIC_API_KEY` for research and drafting (git-ignored; see `.env.example`).
 
 ## Tests
 

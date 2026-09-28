@@ -2,7 +2,7 @@
 
 A lead is held back if you marked it not a fit, it's in an outreach sequence, or it was in a digest within
 `quality_bar.suppress_days` (or finished a sequence), unless something new happened since: a new post, a job
-change, or new hiring or news. Written by stage 10; dossiers join it in iteration 8.
+change, or new hiring or news. Written by stage 10 (pipeline/dossier.py) alongside the dossiers.
 """
 
 from collections import Counter
@@ -15,7 +15,7 @@ from sqlmodel import Session, col, select
 from db.models import Company, Finding, Lead, Post, Review, Run, Score, SearchHit
 from pipeline.collect import latest_cards
 from pipeline.config import Config
-from pipeline.context import Paths, RunContext
+from pipeline.context import Paths
 
 
 @dataclass
@@ -24,6 +24,7 @@ class DigestRow:
     lead: Lead
     company: Company | None
     url: str  # the Sales Navigator link from this run's result card
+    dossier: str | None = None  # path of this lead's dossier, relative to the digest
 
 
 @dataclass
@@ -140,15 +141,16 @@ def render(digest: Digest, session: Session) -> str:
     ]
     if digest.rows:
         lines += [
-            "| # | Lead | Title | Company | Match | Response | Priority | Top reason |",
-            "| ---: | --- | --- | --- | ---: | --- | ---: | --- |",
+            "| # | Lead | Title | Company | Match | Response | Priority | Top reason | Dossier |",
+            "| ---: | --- | --- | --- | ---: | --- | ---: | --- | --- |",
         ]
         for rank, row in enumerate(digest.rows, 1):
             s = row.score
             lines.append(
                 f"| {rank} | [{_cell(row.lead.full_name)}]({row.url}) | {_cell(row.lead.current_title)} "
                 f"| {_cell(row.company.name if row.company else None)} | {s.match_score:.0f}% "
-                f"| {s.response_score:.0f}% {s.response_label} | {s.priority_score:.0f} | {_cell(top_reason(s))} |"
+                f"| {s.response_score:.0f}% {s.response_label} | {s.priority_score:.0f} | {_cell(top_reason(s))} "
+                f"| {f'[open]({row.dossier})' if row.dossier else '-'} |"
             )
     else:
         lines.append("_No leads cleared the bar this run._")
@@ -173,19 +175,6 @@ def top_reason(score: Score) -> str:
     criteria = {c["criterion"]: c for c in (score.match_breakdown or {}).get("criteria", [])}
     fits = [criteria[k]["value"] for k in ("role", "geography") if criteria.get(k, {}).get("value")]
     return "Strong fit: " + ", ".join(fits) if fits else "Strong ICP fit"
-
-
-def digest_stage(ctx: RunContext) -> None:
-    """Stage 10 (digest now; dossiers arrive in iteration 8)."""
-    digest = build_digest(ctx.session, ctx.run, ctx.config)
-    for row in digest.rows:
-        row.lead.last_in_digest_run_id = ctx.run.id
-        ctx.session.add(row.lead)
-    ctx.run.leads_qualified = len(digest.rows)
-    ctx.session.add(ctx.run)
-    ctx.session.commit()
-    path = write_digest(ctx.paths, digest, ctx.session)
-    ctx.log.info("digest: %d leads -> %s", len(digest.rows), path)
 
 
 def _reason_kind(text: str) -> str:

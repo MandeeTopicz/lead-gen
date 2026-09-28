@@ -113,16 +113,23 @@ def mark(lead_id: int, **changes) -> None:
     st.rerun()
 
 
+def run_controls() -> None:
+    """In the sidebar on every page: start a run, or see the one that's going."""
+    with session() as s:
+        running = review.run_in_progress(s, paths)
+    st.sidebar.divider()
+    if running:
+        st.sidebar.warning(f"Run {running.id} in progress (started {running.started_at[11:16]}). "
+                           "Refresh to update.")
+    elif st.sidebar.button("Run now", type="primary", use_container_width=True):
+        log = review.start_run_in_background(paths)
+        st.sidebar.success(f"Run started in the background. Output: {log}. See Run history.")
+
+
 def history_page() -> None:
     st.title("Run history")
     with session() as s:
-        running = review.run_in_progress(s)
         runs = review.runs(s)
-    if running:
-        st.warning(f"Run {running.id} is in progress (started {running.started_at[11:16]}). Refresh to update.")
-    elif st.button("Run now", type="primary"):
-        log = review.start_run_in_background(paths)
-        st.success(f"Run started in the background. Output: {log}. Refresh in a minute to see it here.")
     st.caption("Manual runs are capped per day (icp.yaml caps). A halted run needs you: see its reason and "
                "screenshot below, fix it (usually `uv run leadgen login`), then `uv run leadgen resume`.")
     st.dataframe(
@@ -139,6 +146,7 @@ def history_page() -> None:
 
 
 page = st.sidebar.radio("Page", ["Digest", "Run history"])
+run_controls()
 if page == "Digest":
     digest_page()
 else:

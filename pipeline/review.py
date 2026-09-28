@@ -10,6 +10,7 @@ from sqlmodel import Session, col, select
 
 from db.models import Company, Dossier, Lead, OutreachStep, Review, Run, Score
 from pipeline.context import Paths, now_iso
+from pipeline.run import RunRefused, _fail_orphaned_runs, run_lock
 
 FITS = ("good", "not_fit")
 SEQUENCE_STATUSES = ("active", "replied", "stopped", "done")
@@ -95,5 +96,12 @@ def start_run_in_background(paths: Paths) -> Path:
     return log
 
 
-def run_in_progress(session: Session) -> Run | None:
-    return session.exec(select(Run).where(Run.status == "running").order_by(col(Run.id).desc())).first()
+def run_in_progress(session: Session, paths: Paths) -> Run | None:
+    """The run that's actually going. A run still marked running with no process holding the run lock was
+    stopped or crashed; it's marked failed here so it doesn't block starting a new one."""
+    try:
+        with run_lock(paths.lock_path):
+            _fail_orphaned_runs(session)
+        return None
+    except RunRefused:
+        return session.exec(select(Run).where(Run.status == "running").order_by(col(Run.id).desc())).first()

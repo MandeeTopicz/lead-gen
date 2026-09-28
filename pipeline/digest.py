@@ -38,6 +38,7 @@ class Digest:
     min_match: int
     warn_below: int
     demo: bool = False
+    weights: tuple[float, float] = (0.6, 0.4)  # priority = match weight x match + response weight x response
 
 
 def build_digest(session: Session, run: Run, config: Config) -> Digest:
@@ -63,7 +64,9 @@ def build_digest(session: Session, run: Run, config: Config) -> Digest:
     counts = {"found": len(scores), "passed_gates": len(passed), "above_bar": len(above),
               "held_back": len(held_back), "in_digest": len(rows)}
     cuts = what_cut_leads(scores, bar.min_match) if len(rows) < bar.warn_below else []
-    return Digest(run, rows, held_back, counts, cuts, bar.min_match, bar.warn_below)
+    priority = config.icp.weights.priority
+    return Digest(run, rows, held_back, counts, cuts, bar.min_match, bar.warn_below,
+                  weights=(priority.match, priority.response))
 
 
 def hold_back_reason(session: Session, lead: Lead, run: Run, suppress_days: int) -> str | None:
@@ -146,6 +149,9 @@ def render(digest: Digest, session: Session) -> str:
                   "Don't send them.", ""]
     if digest.rows:
         lines += [
+            f"Priority = {digest.weights[0]:g} × match + {digest.weights[1]:g} × response likelihood; "
+            "the table is sorted by it.",
+            "",
             "| # | Lead | Title | Company | Match | Response | Priority | Top reason | Dossier |",
             "| ---: | --- | --- | --- | ---: | --- | ---: | --- | --- |",
         ]

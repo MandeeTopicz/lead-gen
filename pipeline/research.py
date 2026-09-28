@@ -120,7 +120,9 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
         if not os.environ.get("ANTHROPIC_API_KEY"):
             ctx.log.warning("ANTHROPIC_API_KEY isn't set; skipping research (add it to .env)")
             return
-        client = anthropic.Anthropic(timeout=180)
+        # Streaming keeps a long web-research turn alive; no automatic retries, because a retry repeats the
+        # whole (billed) research conversation.
+        client = anthropic.Anthropic(timeout=600, max_retries=0)
     settings = ctx.config.icp.research
 
     ranked = ctx.session.exec(
@@ -150,6 +152,7 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
             continue
         spent += cost
         ctx.budget.add_llm_cost(cost)
+        ctx.log.info("researched %s: $%.2f", lead.full_name, cost)
         if report is None:
             ctx.log.warning("research for %s returned no findings record; it will be retried next run", lead.full_name)
             ctx.session.add(ctx.run)
@@ -166,9 +169,10 @@ def research_lead(client: Any, settings: Research, brief: str) -> tuple[Research
     messages: list[dict] = [{"role": "user", "content": brief}]
     cost, nudged = 0.0, False
     for _ in range(MAX_CONTINUATIONS):
-        response = client.messages.create(
+        with client.messages.stream(
             model=settings.model, max_tokens=16000, system=SYSTEM, tools=tools, messages=messages
-        )
+        ) as stream:
+            response = stream.get_final_message()
         cost += usage_cost(settings.model, response.usage)
         record = next((b for b in response.content if b.type == "tool_use" and b.name == "record_findings"), None)
         if record is not None:
@@ -195,7 +199,7 @@ def research_tools(settings: Research) -> list[dict]:
         {"type": "web_search_20260209", "name": "web_search", "max_uses": settings.max_searches,
          "blocked_domains": BLOCKED_DOMAINS},
         {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": settings.max_fetches,
-         "blocked_domains": BLOCKED_DOMAINS},
+         "max_content_tokens": settings.max_fetch_tokens, "blocked_domains": BLOCKED_DOMAINS},
         RECORD_FINDINGS,
     ]
 

@@ -73,6 +73,21 @@ class FakeClient:
         self.calls.append(kwargs)
         return self.responses.pop(0)
 
+    def stream(self, **kwargs):
+        response = self.create(**kwargs)
+
+        class Stream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def get_final_message(self):
+                return response
+
+        return Stream()
+
 
 def response(*content, stop="tool_use", **u):
     return NS(content=list(content), stop_reason=stop, usage=usage(**u))
@@ -93,6 +108,7 @@ def test_research_lead_returns_report_and_cost(settings):
     assert tools["web_search"]["type"] == "web_search_20260209"
     assert tools["web_search"]["max_uses"] == settings.max_searches
     assert tools["web_fetch"]["blocked_domains"] == BLOCKED_DOMAINS
+    assert tools["web_fetch"]["max_content_tokens"] == settings.max_fetch_tokens
     assert tools["record_findings"]["strict"] is True
 
 

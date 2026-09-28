@@ -35,8 +35,9 @@ class DossierFiles:
     pdf: Path
 
 
-def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, demo: bool = False) -> list[Block]:
+def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, config: Config) -> list[Block]:
     score, lead, company = row.score, row.lead, row.company
+    weights, demo = config.icp.weights.priority, config.sender.demo
     findings = {f.id: f for f in session.exec(select(Finding).where(Finding.lead_id == lead.id)).all()}
     steps = session.exec(
         select(OutreachStep).where(OutreachStep.run_id == run.id, OutreachStep.lead_id == lead.id)
@@ -55,12 +56,15 @@ def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, demo: bo
         Heading(1, lead.full_name),
         *([Para(DEMO_BANNER)] if demo else []),
         Para(" · ".join(x for x in (lead.current_title, company.name if company else None, lead.location) if x)),
-        Para(f"**Priority #{rank}** (score {score.priority_score:.0f}) · [Open in Sales Navigator]({row.url}) · "
+        Para(f"**Priority #{rank}** in this digest · [Open in Sales Navigator]({row.url}) · "
              f"run {run.id}, {run.started_at[:10]}"),
         # 2. Scores
         Heading(2, "Scores"),
-        Para(f"**Match {score.match_score:.0f}%** · **Response likelihood {score.response_score or 0:.0f}% "
-             f"({score.response_label or 'n/a'})**"),
+        Para(f"**Priority score {score.priority_score:.0f}/100** = {weights.match:g} × match "
+             f"{score.match_score:.0f} + {weights.response:g} × response likelihood {score.response_score or 0:.0f}. "
+             "It ranks the digest: fit counts more than timing."),
+        Para(f"**Match {score.match_score:.0f}%** (how well they fit the ICP) · **Response likelihood "
+             f"{score.response_score or 0:.0f}% ({score.response_label or 'n/a'})** (how likely they are to reply now)"),
         Table(["Match criterion", "Level", "Points", "Evidence", "Source"], [
             [c["criterion"], c["level"], f"{c['points']}/{c['max']}", c["value"] or "", c["source"] or ""]
             for c in (score.match_breakdown or {}).get("criteria", [])
@@ -162,11 +166,11 @@ def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, demo: bo
 
 
 def write_dossier(paths: Paths, session: Session, run: Run, rank: int, row: DigestRow,
-                  demo: bool = False) -> DossierFiles:
+                  config: Config) -> DossierFiles:
     out_dir = paths.run_output_dir(run) / f"run{run.id}"
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{rank:02d}-{_slug(row.lead.full_name)}-{_slug(row.company.name if row.company else 'unknown')}"
-    blocks = build_blocks(session, run, rank, row, demo)
+    blocks = build_blocks(session, run, rank, row, config)
     files = DossierFiles(out_dir / f"{stem}.md", out_dir / f"{stem}.docx", out_dir / f"{stem}.pdf")
     markdown = to_markdown(blocks)
     files.md.write_text(markdown)
@@ -184,7 +188,7 @@ def publish(paths: Paths, session: Session, run: Run, config: Config, *, mark: b
     as shown in this run's digest (stage 10 does; rebuilding an old run's documents doesn't)."""
     digest = build_digest(session, run, config)
     for rank, row in enumerate(digest.rows, 1):
-        files = write_dossier(paths, session, run, rank, row, config.sender.demo)
+        files = write_dossier(paths, session, run, rank, row, config)
         row.dossier = str(files.md.relative_to(paths.run_output_dir(run)))
         if mark:
             row.lead.last_in_digest_run_id = run.id

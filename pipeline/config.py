@@ -217,6 +217,7 @@ class Research(Strict):
     max_leads: int = Field(ge=0)
     max_searches: int = Field(gt=0)
     max_fetches: int = Field(ge=0)
+    max_fetch_tokens: int = Field(gt=0)
     refresh_days: int = Field(gt=0)
     max_usd_per_run: float = Field(ge=0)
 

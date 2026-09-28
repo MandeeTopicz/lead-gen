@@ -146,6 +146,13 @@ def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: lis
                 _finish_run(session, run)
                 ctx.log.warning("stage %d %s: HALTED: %s", stage.number, stage.name, halt.reason)
                 return
+            except KeyboardInterrupt:
+                _rollback_keeping_counters(session, run)
+                _finish_stage(session, record, "failed", "stopped by you")
+                run.status, run.halt_reason = "failed", f"stopped by you during stage {stage.number} {stage.name}"
+                _finish_run(session, run)
+                ctx.log.warning("stage %d %s: stopped by you", stage.number, stage.name)
+                raise
             except Exception as exc:
                 _rollback_keeping_counters(session, run)
                 _finish_stage(session, record, "failed", repr(exc))

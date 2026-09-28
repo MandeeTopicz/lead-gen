@@ -195,3 +195,14 @@ def test_completed_run_can_redo_later_stages(paths):
     run = start_run(paths, stages=make_stages())
     redone = resume_run(paths, run_id=run.id, from_stage=7, stages=make_stages(s7=lambda ctx: calls.append(7)))
     assert redone.status == "completed" and calls == [7]
+
+
+def test_ctrl_c_marks_the_run_failed(paths):
+    def interrupted(ctx):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        start_run(paths, stages=make_stages(s7=interrupted))
+    run = load_run(paths, 1)
+    assert run.status == "failed" and run.halt_reason == "stopped by you during stage 7 research"
+    assert stage_rows(paths, 1)[7] == "failed"

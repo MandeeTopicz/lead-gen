@@ -68,7 +68,7 @@ def test_run_history_page(paths, seeded, monkeypatch):
     app.sidebar.radio[0].set_value("Run history").run()
     assert not app.exception
     assert app.title[0].value == "Run history"
-    assert any(b.label == "Run now" for b in app.button)
+    assert any(b.label == "Run now" for b in app.sidebar.button)
 
 
 def test_schedule_plist(paths):
@@ -84,3 +84,17 @@ def test_schedule_plist(paths):
 def test_schedule_rejects_bad_times(paths):
     with pytest.raises(ValueError):
         schedule.install(paths, "25:00")
+
+
+def test_stale_running_run_is_cleared_and_live_one_is_shown(paths, seeded):
+    from db.models import Run
+    from pipeline.context import now_iso
+    from pipeline.run import run_lock
+
+    with db(paths) as session:
+        session.add(Run(started_at=now_iso(), trigger="manual", status="running", icp_version="x@v1"))
+        session.commit()
+        with run_lock(paths.lock_path):  # a live run holds the lock
+            assert review.run_in_progress(session, paths).status == "running"
+        assert review.run_in_progress(session, paths) is None  # nothing holds it: stale, marked failed
+        assert session.exec(select(Run).where(Run.status == "running")).first() is None

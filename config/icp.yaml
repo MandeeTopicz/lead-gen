@@ -108,8 +108,9 @@ llm:
 research:
   model: claude-sonnet-5
   max_leads: 25            # best-matching leads that passed the gates
-  max_searches: 5          # per lead
-  max_fetches: 4           # per lead (company site about, contact, and careers pages)
+  max_searches: 4          # per lead
+  max_fetches: 3           # per lead (company site about, contact, and careers pages)
+  max_fetch_tokens: 6000   # cap on each fetched page's content; uncapped pages made research ~$0.60 a lead
   refresh_days: 30         # reuse a lead's research younger than this
   max_usd_per_run: 10.0    # stop researching once this run's research spend passes this
 

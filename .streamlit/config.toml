@@ -1,0 +1,9 @@
+# Local-only review screen: no "Deploy" button (lead data stays on this Mac), no usage stats sent to Streamlit.
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+address = "localhost"

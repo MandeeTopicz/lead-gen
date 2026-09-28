@@ -46,8 +46,9 @@ def start_run(
     trigger: str = "manual",
     dry_run: bool = False,
     stages: Sequence[Stage] = STAGES,
+    max_deep_reads: int | None = None,
 ) -> Run:
-    config = load_config(paths.config_dir)
+    config = with_caps(load_config(paths.config_dir), deep_reads=max_deep_reads)
     engine = make_engine(paths.db_path)
     with run_lock(paths.lock_path), Session(engine, expire_on_commit=False) as session:
         _fail_orphaned_runs(session)
@@ -66,6 +67,16 @@ def start_run(
         return run
 
 
+def with_caps(config: Config, **caps: int | None) -> Config:
+    """This run's config with some caps lowered (never raised) from the command line."""
+    current = config.icp.caps
+    changes = {k: min(v, getattr(current, k)) for k, v in caps.items() if v is not None}
+    if not changes:
+        return config
+    icp = config.icp.model_copy(update={"caps": current.model_copy(update=changes)})
+    return config.model_copy(update={"icp": icp})
+
+
 def resume_run(
     paths: Paths,
     run_id: int | None = None,
@@ -76,7 +87,7 @@ def resume_run(
     engine = make_engine(paths.db_path)
     with run_lock(paths.lock_path), Session(engine, expire_on_commit=False) as session:
         _fail_orphaned_runs(session)
-        run = _find_resumable(session, run_id)
+        run = _find_resumable(session, run_id, rerun=from_stage is not None)
         if run.icp_version != config.icp.version_tag:
             raise RunRefused(
                 f"run {run.id} used {run.icp_version} but config is now {config.icp.version_tag}; start a new run"
@@ -220,7 +231,7 @@ def _check_daily_cap(session: Session, config: Config, trigger: str) -> None:
         raise RunRefused(f"daily cap reached: {count}/{limit} {trigger} runs already started today")
 
 
-def _find_resumable(session: Session, run_id: int | None) -> Run:
+def _find_resumable(session: Session, run_id: int | None, rerun: bool = False) -> Run:
     if run_id is None:
         run = session.exec(
             select(Run).where(col(Run.status).in_(["halted", "failed"])).order_by(col(Run.id).desc())
@@ -231,8 +242,10 @@ def _find_resumable(session: Session, run_id: int | None) -> Run:
     run = session.get(Run, run_id)
     if run is None:
         raise RunRefused(f"run {run_id} not found")
-    if run.status not in ("halted", "failed"):
-        raise RunRefused(f"run {run_id} is {run.status}; only halted or failed runs can resume")
+    # A completed run can redo its later stages when you name where to start (e.g. research after a fix).
+    if run.status not in ("halted", "failed") and not (rerun and run.status == "completed"):
+        raise RunRefused(f"run {run_id} is {run.status}; only halted or failed runs can resume "
+                         "(a completed run can redo stages with --from-stage)")
     return run
 
 

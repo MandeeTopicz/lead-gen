@@ -150,7 +150,7 @@ def test_resume_from_explicit_stage(paths):
 def test_resume_refuses_completed_runs_and_changed_icp(paths):
     run = start_run(paths, stages=make_stages())
     with pytest.raises(RunRefused, match="only halted or failed"):
-        resume_run(paths, run_id=run.id)
+        resume_run(paths, run_id=run.id)  # completed: needs an explicit --from-stage
     with pytest.raises(RunRefused, match="no halted or failed run"):
         resume_run(paths)
 
@@ -176,3 +176,22 @@ def test_orphaned_running_runs_are_marked_failed(paths):
     assert orphan.status == "failed"
     assert orphan.halt_reason == "process exited mid-run"
     assert stage_rows(paths, 1) == {3: "failed"}
+
+
+def test_cap_override_lowers_but_never_raises(paths):
+    from pipeline.config import load_config
+    from pipeline.run import with_caps
+
+    config = load_config(paths.config_dir)
+    assert with_caps(config, deep_reads=10).icp.caps.deep_reads == 10
+    assert with_caps(config, deep_reads=500).icp.caps.deep_reads == config.icp.caps.deep_reads
+    seen = []
+    start_run(paths, stages=make_stages(s6=lambda ctx: seen.append(ctx.config.icp.caps.deep_reads)), max_deep_reads=3)
+    assert seen == [3]
+
+
+def test_completed_run_can_redo_later_stages(paths):
+    calls = []
+    run = start_run(paths, stages=make_stages())
+    redone = resume_run(paths, run_id=run.id, from_stage=7, stages=make_stages(s7=lambda ctx: calls.append(7)))
+    assert redone.status == "completed" and calls == [7]

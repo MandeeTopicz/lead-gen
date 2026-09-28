@@ -85,8 +85,7 @@ RECORD_FINDINGS = {
                             "description": "YYYY-MM-DD of the event or publication, if known.",
                         },
                         "email_basis": {
-                            "type": ["string", "null"],
-                            "enum": ["published", "pattern", None],
+                            "anyOf": [{"type": "string", "enum": ["published", "pattern"]}, {"type": "null"}],
                             "description": "For emails: 'published' if the address itself appears on the page, "
                             "'pattern' if inferred from the company's email format. Null for other kinds.",
                         },
@@ -128,7 +127,7 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
         select(Score)
         .where(Score.run_id == ctx.run.id, Score.gates_passed == True)  # noqa: E712
         .order_by(col(Score.match_score).desc())
-        .limit(settings.max_leads)
+        .limit(min(settings.max_leads, ctx.config.icp.caps.deep_reads))  # research only what was deep-read
     ).all()
     spent, researched, reused = 0.0, 0, 0
     for score in ranked:
@@ -163,13 +162,7 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
 
 def research_lead(client: Any, settings: Research, brief: str) -> tuple[ResearchReport | None, float]:
     """One lead's research conversation. Returns the validated report (or None) and its cost in USD."""
-    tools = [
-        {"type": "web_search_20260209", "name": "web_search", "max_uses": settings.max_searches,
-         "blocked_domains": BLOCKED_DOMAINS},
-        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": settings.max_fetches,
-         "blocked_domains": BLOCKED_DOMAINS},
-        RECORD_FINDINGS,
-    ]
+    tools = research_tools(settings)
     messages: list[dict] = [{"role": "user", "content": brief}]
     cost, nudged = 0.0, False
     for _ in range(MAX_CONTINUATIONS):
@@ -195,6 +188,16 @@ def research_lead(client: Any, settings: Research, brief: str) -> tuple[Research
         ]
         nudged = True
     return None, cost
+
+
+def research_tools(settings: Research) -> list[dict]:
+    return [
+        {"type": "web_search_20260209", "name": "web_search", "max_uses": settings.max_searches,
+         "blocked_domains": BLOCKED_DOMAINS},
+        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": settings.max_fetches,
+         "blocked_domains": BLOCKED_DOMAINS},
+        RECORD_FINDINGS,
+    ]
 
 
 def lead_brief(lead: Lead, company: Company | None) -> str:

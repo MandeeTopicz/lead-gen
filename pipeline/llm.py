@@ -28,11 +28,15 @@ def usage_cost(model: str, usage: Any) -> float:
     return (tokens_in * price_in + (usage.output_tokens or 0) * price_out) / 1_000_000 + searches * WEB_SEARCH_USD
 
 
-def check_access(settings: Llm) -> list[str]:
-    """Confirm the key works and both configured models are available. Model lookups aren't billed."""
+def check_access(settings: Llm, research_model: str, research_tools: list[dict]) -> list[str]:
+    """Confirm the key works, both configured models are available, and the API accepts the research tools'
+    schemas. Model lookups and token counts aren't billed."""
     client = anthropic.Anthropic()
     lines = []
     for role, model_id in (("fast", settings.fast_model), ("writer", settings.writer_model)):
         model = client.models.retrieve(model_id)
         lines.append(f"{role} model ok: {model.display_name} ({model.id})")
+    client.messages.count_tokens(model=research_model, messages=[{"role": "user", "content": "schema check"}],
+                                 tools=research_tools)
+    lines.append("research tool schemas ok")
     return lines

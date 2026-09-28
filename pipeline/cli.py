@@ -19,6 +19,7 @@ from pipeline.dossier import publish
 from pipeline.context import Halt, Paths
 from pipeline.linkedin.session import LoginFailed, capture, check_session, login
 from pipeline.llm import check_access
+from pipeline.research import research_tools
 from pipeline import schedule
 from pipeline.notify import notify
 from pipeline.report import NoScores, match_report, write_report
@@ -34,9 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     run = commands.add_parser("run", help="start a new run")
     run.add_argument("--trigger", choices=["manual", "cron"], default="manual")
     run.add_argument("--dry-run", action="store_true", help="no LinkedIn or paid APIs; not counted in daily caps")
+    run.add_argument("--max-deep-reads", type=int, metavar="N", help="read at most N profiles this run (lower only)")
 
     resume = commands.add_parser("resume", help="continue a halted or failed run")
-    resume.add_argument("run_id", nargs="?", type=int, help="defaults to the latest halted or failed run")
+    resume.add_argument("run_id", nargs="?", type=int,
+                        help="defaults to the latest halted or failed run; a completed run needs --from-stage")
     resume.add_argument("--from-stage", type=int, choices=range(1, 11), metavar="N")
 
     digest_cmd = commands.add_parser("digest", help="rebuild a run's digest and dossiers (latest run by default)")
@@ -72,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         match args.command:
             case "run":
-                result = start_run(paths, trigger=args.trigger, dry_run=args.dry_run)
+                result = start_run(paths, trigger=args.trigger, dry_run=args.dry_run, max_deep_reads=args.max_deep_reads)
                 return _report(result)
             case "resume":
                 result = resume_run(paths, run_id=args.run_id, from_stage=args.from_stage)
@@ -191,7 +194,8 @@ def _check_llm(paths: Paths) -> int:
         print(f"ANTHROPIC_API_KEY isn't set. Copy .env.example to {paths.root / '.env'} and add your key.")
         return 1
     try:
-        for line in check_access(load_config(paths.config_dir).icp.llm):
+        icp = load_config(paths.config_dir).icp
+        for line in check_access(icp.llm, icp.research.model, research_tools(icp.research)):
             print(line)
     except anthropic.AuthenticationError:
         print("the API key was rejected; check ANTHROPIC_API_KEY in .env", file=sys.stderr)
@@ -201,6 +205,9 @@ def _check_llm(paths: Paths) -> int:
         return 1
     except anthropic.NotFoundError as exc:
         print(f"model not found: {exc.message}", file=sys.stderr)
+        return 1
+    except anthropic.BadRequestError as exc:
+        print(f"the API rejected a request schema: {exc.message}", file=sys.stderr)
         return 1
     except anthropic.APIConnectionError:
         print("couldn't reach the Anthropic API; check your connection", file=sys.stderr)

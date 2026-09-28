@@ -194,3 +194,19 @@ def test_skips_without_api_key(paths, monkeypatch):
     run = run_with_research(paths, swapped_client)
     assert run.status == "completed"
     assert findings(paths) == []
+
+
+def test_record_findings_schema_has_no_null_inside_a_string_enum():
+    """The API rejects an enum containing null on a ["string", "null"] field (found in the first real run)."""
+    from pipeline.research import RECORD_FINDINGS
+
+    def walk(node):
+        if isinstance(node, dict):
+            assert None not in node.get("enum", []), node
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(RECORD_FINDINGS["input_schema"])

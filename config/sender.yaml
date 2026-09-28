@@ -1,0 +1,20 @@
+# Who is reaching out. Drafting (iteration 7) refuses to run until the required fields are filled.
+# Affinity scoring compares leads against `background`.
+
+sender:
+  name: ""
+  title: ""
+  company: ""
+  email: ""
+  phone: ""
+  physical_address: ""   # required in every email (CAN-SPAM)
+  local_to_austin: true
+
+offer: ""                # what you offer logistics ops leaders, in one or two sentences
+proof_points: []         # results you can cite, e.g. "Cut dock-to-stock time 30% for a 200-person 3PL"
+past_clients: []         # only clients you have permission to name
+
+background:
+  employers: []
+  schools: []
+  communities: []        # groups, associations, local organizations

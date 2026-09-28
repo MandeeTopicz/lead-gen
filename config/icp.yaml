@@ -1,0 +1,75 @@
+# The one hardcoded ICP. Every weight, threshold, and point value lives here.
+# Bump icp.version whenever scoring changes so scores across versions aren't compared.
+
+icp:
+  name: austin-logistics-ops-leaders
+  version: 1
+  gates:
+    titles: ["COO", "Chief Operating Officer", "VP of Operations", "VP Operations",
+             "Vice President of Operations", "SVP Operations", "Head of Operations"]
+    related_titles: ["VP Logistics", "VP Supply Chain"]
+    industries: ["Transportation, Logistics, Supply Chain and Storage",
+                 "Truck Transportation", "Warehousing and Storage",
+                 "Freight and Package Transportation"]
+    adjacent_industries: ["Wholesale", "Manufacturing"]   # partial credit only with logistics keywords
+  exclude:
+    title_terms: ["assistant", "fractional", "consultant", "advisor"]
+    company_types: ["Public Company"]
+    max_headcount: 1000
+  geography: { primary: "Greater Austin", partial: "Texas" }
+  tenure: { full_if_months_lt: 12, full_if_years_gte: 3 }
+  company: { size_full: [51, 500], size_partial: [[11, 50], [501, 1000]], type: "Privately Held" }
+  keywords: ["3PL", "third-party logistics", "freight", "last mile", "last-mile", "drayage",
+             "brokerage", "warehousing", "fulfillment", "cold chain", "LTL", "FTL",
+             "cross-dock", "supply chain"]
+
+# Search code -> saved-search name in Sales Navigator. The agent opens these by name and never edits them.
+searches:
+  S1: S1-strict
+  S2: S2-no-activity
+  S3: S3-no-tenure
+  S4: S4-wider-size
+  S5: S5-wider-area
+  S6: S6-no-keywords
+  S7: S7-new-in-role
+
+weights:
+  match: { role: 20, industry: 18, geography: 16, activity: 14, tenure: 12,
+           size: 10, company_type: 6, keywords: 4 }
+  response: { activity: 25, affinity: 20, local: 15, trigger: 15, reach: 15, new_in_role: 10 }
+  priority: { match: 0.6, response: 0.4 }
+
+# Partial credit for the ICP match score. Full credit is the weight above.
+match_points:
+  role_related: 12
+  industry_adjacent: 9
+  geography_partial: 6
+  activity: { full_within_days: 30, partial_within_days: 90, partial: 6 }
+  tenure_1_to_3_years: 0
+  size_partial: 4
+  company_type_other: 0
+  keywords: { full_min_matches: 2, one_match: 2 }
+
+# Point rules for the response likelihood score. Each factor is capped at its weight.
+response_points:
+  activity: { within_7_days: 25, within_30_days: 18, within_90_days: 8 }
+  affinity: { shared_connections: 10, shared_background: 10 }
+  local: 15
+  trigger: { hiring: 8, news: 7, news_within_days: 90 }
+  reach: { verified_email: 6, phone: 4, connection_or_open_profile: 5 }
+  new_in_role: { points: 10, within_months: 12 }
+  labels: { high: 70, medium: 45 }
+
+quality_bar: { min_match: 60, max_leads: 25, warn_below: 10 }
+
+caps:
+  result_pages: 30
+  deep_reads: 40
+  scheduled_runs_per_day: 1
+  manual_runs_per_day: 2
+  delay_seconds: [4, 12]
+
+sequence:
+  linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }
+  email: { touches: 2, start_week: 6 }
+  calls: { touches: 2, start_week: 6 }

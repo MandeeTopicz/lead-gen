@@ -148,6 +148,7 @@ class TriggerPoints(Strict):
     hiring: int = Field(ge=0)
     news: int = Field(ge=0)
     news_within_days: int = Field(gt=0)
+    hiring_role_terms: list[str] = []
 
 
 class ReachPoints(Strict):
@@ -226,6 +227,10 @@ class Drafting(Strict):
     max_usd_per_run: float = Field(ge=0)
 
 
+class Observability(Strict):
+    browser_trace: bool = True
+
+
 class LinkedInSequence(Strict):
     touches: int = Field(ge=0)
     per_week: int = Field(gt=0)
@@ -256,6 +261,7 @@ class IcpConfig(Strict):
     llm: Llm
     research: Research
     drafting: Drafting
+    observability: Observability = Observability()
     sequence: Sequence
 
     @model_validator(mode="after")

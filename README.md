@@ -18,7 +18,7 @@ The agent uses its own Chrome profile, separate from your everyday one, and neve
 
 | Command | What it does |
 | --- | --- |
-| `leadgen run [--trigger manual\|cron] [--dry-run]` | Start a run. Dry runs skip LinkedIn and paid APIs and don't count toward daily caps. |
+| `leadgen run [--trigger manual\|cron] [--dry-run] [--max-deep-reads N] [--watch]` | Start a run. Dry runs skip LinkedIn and paid APIs and don't count toward daily caps. `--watch` shows the Chrome window so you can watch it work. |
 | `leadgen resume [RUN_ID] [--from-stage N]` | Continue a halted or failed run (defaults to the latest one, from its first unfinished stage). |
 | `leadgen digest [RUN_ID]` | Rebuild and print a run's digest and dossiers (latest completed run by default). |
 | `leadgen report [RUN_ID] [--details]` | Ranked match scores for a run (latest by default), with dropped leads and why; `--details` adds every lead's point breakdown. Also saved to `output/<run-date>/`. |
@@ -52,3 +52,11 @@ uv run pytest -m "not browser" # skip the Chrome tests
 ```
 
 No test touches LinkedIn.
+
+## Oversight
+
+- **Review screen, Run history page:** while a run is going, a panel refreshes every few seconds with the current stage, elapsed time, pages, deep reads, Claude spend, and the latest log lines. Pick any past run to see stage times, Claude cost per lead, and its browser trace.
+- **Run log** (`output/<date>/run.log`): every page the agent opened, the pause before it, what cap it counted against, and the halt checks; every search Claude ran and page it read during research; per-lead cost and time for research and drafting.
+- **Browser trace** (`output/<date>/run<N>/browser-trace-*.zip`): a replayable timeline of every page, click, and scroll with screenshots. Open it with `uv run playwright show-trace <file>`. Turn off with `observability.browser_trace: false` in `icp.yaml`.
+- **Watch mode:** `uv run leadgen run --watch` shows the Chrome window for that run (it takes focus).
+- **Dossiers** end with a **Research trail**: what Claude searched, what it read, tokens, cost, and time. **Digests** end with **Where the time and money went**: time and Claude cost per stage and per lead.

@@ -4,6 +4,7 @@ A heuristic ranking, not a probability; calibrate it once reply data exists. Rul
 each factor records its points and the evidence behind them (finding ids, post dates, card data).
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -62,15 +63,16 @@ def score_response(inputs: ResponseInputs, config: Config) -> ResponseResult:
             f"posted within the last {days} days (LinkedIn badge)"
         add("activity", earned, weights.activity, detail)
 
-    # Affinity and warm paths
+    # Affinity and warm paths. Mutual connections earn their points once; the second half needs a real shared
+    # employer, school, or community with the sender (sender.yaml), not just any "affinity" finding.
     affinity_findings = [f for f in usable if f.kind == "affinity"]
     earned, details = 0, []
     if inputs.mutual_connections:
         earned += points.affinity.shared_connections
-        details.append(f"{inputs.mutual_connections} mutual connections")
-    if inputs.shared_background or affinity_findings:
+        details.append(_plural(inputs.mutual_connections, "mutual connection"))
+    if inputs.shared_background:
         earned += points.affinity.shared_background
-        details.append("shared " + ", ".join(inputs.shared_background or [f.value for f in affinity_findings][:1]))
+        details.append("shared " + ", ".join(inputs.shared_background))
     add("affinity", earned, weights.affinity, "; ".join(details) or None, [f.id for f in affinity_findings])
 
     # Local
@@ -78,7 +80,7 @@ def score_response(inputs: ResponseInputs, config: Config) -> ResponseResult:
         "Greater Austin: coffee is realistic" if inputs.in_primary_area else None)
 
     # Timing trigger
-    hiring = [f for f in usable if f.kind == "hiring"]
+    hiring = [f for f in usable if f.kind == "hiring" and _ops_role(f.value, points.trigger.hiring_role_terms)]
     news = [f for f in usable if f.kind == "news" and _within_days(f.event_date, points.trigger.news_within_days)]
     earned, details = 0, []
     if hiring:
@@ -189,6 +191,16 @@ def _within_days(event_date: str | None, days: int) -> bool:
     except ValueError:
         return False
     return (date.today() - when).days <= days
+
+
+def _ops_role(text: str, terms: list[str]) -> bool:
+    """PRD: the trigger is the company hiring ops or logistics roles, not any opening."""
+    lowered = text.lower()
+    return any(re.search(rf"\b{re.escape(term.lower())}", lowered) for term in terms)
+
+
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
 def _ordinal(n: int | None) -> str:

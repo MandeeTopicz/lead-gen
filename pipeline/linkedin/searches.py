@@ -52,7 +52,7 @@ class SalesNavigatorSearches:
         if name not in saved:
             known = ", ".join(sorted(saved)) or "none"
             self.pacer.halt(f"no saved search named {name!r} (found: {known})")
-        self.pacer.goto(saved[name], cost="page")
+        self.pacer.goto(saved[name], cost="page", label=f"saved search {name!r}, page 1")
 
     def cards(self) -> list[Card]:
         html = self._render_all_results()
@@ -67,7 +67,8 @@ class SalesNavigatorSearches:
         if not has_next_page(self.page.content()):
             return False
         before = self.page.url
-        self.pacer.act(lambda: self.page.locator('button[aria-label="Next"]').click(), cost="page")
+        self.pacer.act(lambda: self.page.locator('button[aria-label="Next"]').click(), cost="page",
+                       label="clicked Next")
         if self.page.url == before:
             self.pacer.halt("clicked Next but the results page didn't change")
         return True
@@ -78,7 +79,7 @@ class SalesNavigatorSearches:
             link = self.page.locator(self.PANEL_LINK).first
             if link.count() == 0:
                 self.pacer.halt("Sales Navigator's Saved searches link wasn't found (page layout changed?)")
-            self.pacer.act(link.click)
+            self.pacer.act(link.click, label="opened the Saved searches panel")
             try:
                 self.page.wait_for_selector('a[href*="savedSearchId="]', timeout=15_000)
             except Exception:
@@ -139,6 +140,7 @@ def run_searches(ctx: RunContext, pages: SavedSearchPages) -> None:
             while True:
                 cards = pages.cards()
                 viewed += 1
+                ctx.log.info("  %s page %d: %d result cards", code, viewed, len(cards))
                 for card in cards:
                     record_card(ctx.session, ctx.run, code, card)
                 found += len(cards)

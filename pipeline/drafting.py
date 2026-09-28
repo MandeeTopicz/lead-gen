@@ -7,6 +7,7 @@ retry with the problems listed, and anything still failing is stored flagged for
 """
 
 import os
+import time
 from datetime import date
 from typing import Any, Literal
 
@@ -20,7 +21,7 @@ from pipeline.config import Config
 from pipeline.context import RunContext
 from pipeline.digest import build_digest
 from pipeline.evidence import evidence_list, refresh_linkedin_evidence, usable_evidence
-from pipeline.llm import usage_cost
+from pipeline.llm import CallRecord, account_problem, store_calls, total_cost
 from pipeline.outreach_plan import (
     PlannedStep,
     check_angles,
@@ -113,7 +114,7 @@ def drafting(ctx: RunContext, client: Any | None = None) -> None:
     facts = facts_for_run(ctx.session, ctx.run.id)
     budget = ctx.config.icp.drafting.max_usd_per_run
     spent, written, flagged = 0.0, 0, 0
-    for row in rows:
+    for number, row in enumerate(rows, 1):
         if spent >= budget:
             ctx.log.warning("drafting budget of $%.2f reached; %d leads not drafted", budget, len(rows) - written)
             break
@@ -127,29 +128,49 @@ def drafting(ctx: RunContext, client: Any | None = None) -> None:
             has_email=published_email(evidence) is not None,
             has_phone=any(f.kind == "phone" for f in evidence),
         )
+        evidence_ids = sorted(f.id for f in evidence)
+        if (row.score.writeup or {}).get("evidence_ids") == evidence_ids:
+            # Same evidence as its current drafts: keep them (flagged drafts stay flagged for you to edit).
+            ctx.log.info("drafting %d/%d: %s: evidence unchanged, keeping its drafts", number, len(rows),
+                         lead.full_name)
+            continue
+        ctx.log.info("drafting %d/%d: %s (%d evidence items, %d steps)", number, len(rows), lead.full_name,
+                     len(evidence), len(plan))
         try:
             posts = [p.text for p in ctx.session.exec(select(Post).where(Post.lead_id == lead.id)) if p.text]
-            style, style_cost = tag_style(client, ctx.config, lead, posts)
-            writeup, problems, cost = write_lead(client, ctx.config, lead, company, evidence, style, plan)
-        except anthropic.AuthenticationError:
-            ctx.log.warning("the Anthropic API key was rejected; skipping drafting")
-            return
+            style, style_calls = tag_style(client, ctx.config, lead, posts)
+            writeup, problems, calls, first_try = write_lead(client, ctx.config, lead, company, evidence, style, plan)
         except anthropic.APIError as exc:
+            problem = account_problem(exc)
+            if problem:
+                ctx.log.warning("%s; stopping drafting for this run", problem)
+                return
             ctx.log.warning("drafting failed for %s: %s", lead.full_name, exc)
             continue
-        spent += style_cost + cost
-        ctx.budget.add_llm_cost(style_cost + cost)
-        store(ctx, row.score, lead, style, writeup, plan, problems)
+        cost = total_cost(style_calls + calls)
+        spent += cost
+        ctx.budget.add_llm_cost(cost)
+        store_calls(ctx.session, ctx.run.id, lead.id, "style", style_calls)
+        store_calls(ctx.session, ctx.run.id, lead.id, "drafting", calls)
+        if len(calls) > 1:
+            ctx.log.info("  first try failed checks: %s", "; ".join(first_try))
+        ctx.log.info("  %s, $%.2f, %.0fs%s", "retried once" if len(calls) > 1 else "first try", cost,
+                     sum(c.seconds for c in style_calls + calls),
+                     f", {len(problems)} problems flagged" if problems else "")
+        store(ctx, row.score, lead, style, writeup, plan, problems, evidence_ids)
         written += 1
         flagged += bool(problems)
     ctx.log.info("drafted %d leads ($%.2f), %d flagged for review", written, spent, flagged)
 
 
-def tag_style(client: Any, config: Config, lead: Lead, posts: list[str]) -> tuple[CommunicationStyle, float]:
+def tag_style(client: Any, config: Config, lead: Lead, posts: list[str]) -> tuple[CommunicationStyle, list[CallRecord]]:
+    if lead.communication_style:
+        return CommunicationStyle.model_validate(lead.communication_style), []  # already tagged: reuse
     if not posts and not lead.about:
-        return DEFAULT_STYLE, 0.0
+        return DEFAULT_STYLE, []
     sample = "\n\n".join([f"About: {lead.about[:800]}" if lead.about else "", *(f"Post: {p[:600]}" for p in posts[:5])])
     model = config.icp.llm.fast_model
+    started = time.monotonic()
     response = client.messages.parse(
         model=model,
         max_tokens=1024,
@@ -158,15 +179,19 @@ def tag_style(client: Any, config: Config, lead: Lead, posts: list[str]) -> tupl
         messages=[{"role": "user", "content": sample.strip()}],
         output_format=CommunicationStyle,
     )
-    return response.parsed_output or DEFAULT_STYLE, usage_cost(model, response.usage)
+    return response.parsed_output or DEFAULT_STYLE, [CallRecord.from_response(model, response, time.monotonic() - started)]
 
 
 def write_lead(client: Any, config: Config, lead: Lead, company: Company | None, evidence: list, style: CommunicationStyle,
-               plan: list[PlannedStep]) -> tuple[LeadWriteup, list[str], float]:
+               plan: list[PlannedStep]) -> tuple[LeadWriteup, list[str], list[CallRecord], list[str]]:
+    """Returns the writeup, the problems still left after any retry, every call made, and what failed on the
+    first try (when there was a retry)."""
     model = config.icp.llm.writer_model
     messages: list[dict] = [{"role": "user", "content": brief(config, lead, company, evidence, style, plan)}]
-    cost, writeup, problems = 0.0, None, []
+    records, writeup, problems = [], None, []
+    first_try_problems: list[str] = []
     for attempt in range(2):
+        started = time.monotonic()
         response = client.messages.parse(
             model=model,
             max_tokens=16000,
@@ -174,7 +199,7 @@ def write_lead(client: Any, config: Config, lead: Lead, company: Company | None,
             messages=messages,
             output_format=LeadWriteup,
         )
-        cost += usage_cost(model, response.usage)
+        records.append(CallRecord.from_response(model, response, time.monotonic() - started))
         writeup = response.parsed_output
         if writeup is None:
             problems = ["the response didn't match the expected format"]
@@ -182,13 +207,14 @@ def write_lead(client: Any, config: Config, lead: Lead, company: Company | None,
             problems = check_writeup(writeup, plan, {f.id for f in evidence})
         if not problems or attempt == 1:
             break
+        first_try_problems.extend(problems)
         messages += [
             {"role": "assistant", "content": response.content},
             {"role": "user", "content": "Fix these problems and return the complete result again:\n- "
              + "\n- ".join(problems)},
         ]
     return writeup or LeadWriteup(person_summary="", company_snapshot="", reasons=[], talking_points=[],
-                                  drafts=[]), problems, cost
+                                  drafts=[]), problems, records, first_try_problems
 
 
 def check_writeup(writeup: LeadWriteup, plan: list[PlannedStep], valid_ids: set[int]) -> list[str]:
@@ -239,12 +265,13 @@ def brief(config: Config, lead: Lead, company: Company | None, evidence: list, s
 
 
 def store(ctx: RunContext, score: Score, lead: Lead, style: CommunicationStyle, writeup: LeadWriteup,
-          plan: list[PlannedStep], problems: list[str]) -> None:
+          plan: list[PlannedStep], problems: list[str], evidence_ids: list[int]) -> None:
     lead.communication_style = style.model_dump()
     score.reasons = [{"text": strip_emoji(r.text), "finding_ids": r.finding_ids} for r in writeup.reasons]
     score.writeup = {"person_summary": strip_emoji(writeup.person_summary),
                      "company_snapshot": strip_emoji(writeup.company_snapshot),
-                     "talking_points": [strip_emoji(t) for t in writeup.talking_points], "check_failures": problems}
+                     "talking_points": [strip_emoji(t) for t in writeup.talking_points], "check_failures": problems,
+                     "evidence_ids": evidence_ids}
     ctx.session.exec(delete(OutreachStep).where(OutreachStep.run_id == ctx.run.id, OutreachStep.lead_id == lead.id))
     drafts = {d.step_code: d for d in writeup.drafts}
     for step in plan:

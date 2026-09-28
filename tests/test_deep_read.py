@@ -71,7 +71,7 @@ class FakePacer:
     def __init__(self, ctx, pages: dict[str, str]):
         self.ctx, self.pages, self.page, self.visited = ctx, pages, FakePage(), []
 
-    def goto(self, url, cost=None):
+    def goto(self, url, cost=None, label=None):
         if cost == "deep_read":
             self.ctx.budget.use_deep_read()
         self.visited.append(url.split("?")[0])

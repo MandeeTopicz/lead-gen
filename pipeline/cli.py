@@ -23,7 +23,7 @@ from pipeline.research import research_tools
 from pipeline import schedule
 from pipeline.notify import notify
 from pipeline.report import NoScores, match_report, write_report
-from pipeline.run import RunRefused, resume_run, run_lock, start_run
+from pipeline.run import RunRefused, rescore_run, resume_run, run_lock, start_run
 
 EXIT_CODES = {"completed": 0, "failed": 1, "halted": 2}
 
@@ -36,11 +36,16 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--trigger", choices=["manual", "cron"], default="manual")
     run.add_argument("--dry-run", action="store_true", help="no LinkedIn or paid APIs; not counted in daily caps")
     run.add_argument("--max-deep-reads", type=int, metavar="N", help="read at most N profiles this run (lower only)")
+    run.add_argument("--watch", action="store_true", help="show the Chrome window so you can watch (takes focus)")
 
     resume = commands.add_parser("resume", help="continue a halted or failed run")
     resume.add_argument("run_id", nargs="?", type=int,
                         help="defaults to the latest halted or failed run; a completed run needs --from-stage")
     resume.add_argument("--from-stage", type=int, choices=range(1, 11), metavar="N")
+    resume.add_argument("--watch", action="store_true", help="show the Chrome window so you can watch")
+
+    rescore = commands.add_parser("rescore", help="recompute scores and rebuild documents for a run (free)")
+    rescore.add_argument("run_id", type=int)
 
     digest_cmd = commands.add_parser("digest", help="rebuild a run's digest and dossiers (latest run by default)")
     digest_cmd.add_argument("run_id", nargs="?", type=int)
@@ -75,15 +80,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         match args.command:
             case "run":
-                result = start_run(paths, trigger=args.trigger, dry_run=args.dry_run, max_deep_reads=args.max_deep_reads)
+                result = start_run(paths, trigger=args.trigger, dry_run=args.dry_run,
+                                   max_deep_reads=args.max_deep_reads, watch=args.watch)
                 return _report(result)
             case "resume":
-                result = resume_run(paths, run_id=args.run_id, from_stage=args.from_stage)
+                result = resume_run(paths, run_id=args.run_id, from_stage=args.from_stage, watch=args.watch)
                 return _report(result)
             case "runs":
                 return _list_runs(paths, args.limit)
             case "check-config":
                 return _check_config(paths)
+            case "rescore":
+                return _report(rescore_run(paths, args.run_id))
             case "digest":
                 return _digest(paths, args.run_id)
             case "report":
@@ -153,11 +161,13 @@ def _list_runs(paths: Paths, limit: int) -> int:
             stages = session.exec(
                 select(RunStage).where(RunStage.run_id == run.id).order_by(col(RunStage.stage))
             ).all()
-            last = stages[-1] if stages else None
+            # The stage it's on (or stopped at), not just the highest-numbered stage it ever reached.
+            last = next((st for st in stages if st.status != "completed"), stages[-1] if stages else None)
             print(
                 f"{run.id:>4}  {run.started_at}  {run.trigger:<6}  {run.status:<9}"
                 f"{' dry' if run.dry_run else '    '}  pages={run.pages_viewed:<3} reads={run.profiles_read:<3}"
-                f"  last stage={last.stage if last else '-'} {last.name if last else ''}"
+                f"  {'now at' if run.status == 'running' else 'last'} stage="
+                f"{last.stage if last else '-'} {last.name if last else ''}"
                 + (f"  [{run.halt_reason}]" if run.halt_reason else "")
             )
     return 0

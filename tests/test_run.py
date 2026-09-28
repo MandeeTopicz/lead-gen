@@ -206,3 +206,21 @@ def test_ctrl_c_marks_the_run_failed(paths):
     run = load_run(paths, 1)
     assert run.status == "failed" and run.halt_reason == "stopped by you during stage 7 research"
     assert stage_rows(paths, 1)[7] == "failed"
+
+
+def test_log_marks_each_pass(paths):
+    run = start_run(paths, stages=make_stages(s5=lambda ctx: (_ for _ in ()).throw(Halt("stop"))))
+    resume_run(paths, stages=make_stages())
+    log = (paths.output_dir / run.started_at[:10] / "run.log").read_text()
+    assert f"──── started run {run.id} (manual) ────" in log
+    assert f"──── resumed run {run.id} from stage 5 match_score ────" in log
+
+
+def test_rescore_runs_only_scoring_and_documents(paths):
+    from pipeline.run import rescore_run
+
+    calls = []
+    run = start_run(paths, stages=make_stages())
+    stages = make_stages(**{f"s{n}": (lambda n: lambda ctx: calls.append(n))(n) for n in range(1, 11)})
+    assert rescore_run(paths, run.id, stages=stages).status == "completed"
+    assert calls == [8, 10]

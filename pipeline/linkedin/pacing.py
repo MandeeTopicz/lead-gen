@@ -2,11 +2,13 @@
 
 import logging
 import random
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, TypeVar
+from urllib.parse import urlparse
 
 from playwright.sync_api import Page
 
@@ -15,6 +17,13 @@ from pipeline.linkedin.checks import detect_problem, has_session_cookie, require
 
 Cost = Literal["page", "deep_read"] | None
 T = TypeVar("T")
+
+
+def short_url(url: str) -> str:
+    """A readable URL for logs: path only, without the per-session tokens LinkedIn adds."""
+    parts = urlparse(url)
+    saved = re.search(r"savedSearchId=(\d+)", parts.query)
+    return parts.path + (f"?savedSearchId={saved.group(1)}" if saved else "")
 
 
 class Pacer:
@@ -38,24 +47,33 @@ class Pacer:
         self._rng = rng or random.Random()
         self.settle_seconds = settle_seconds
 
-    def goto(self, url: str, cost: Cost = None) -> None:
+    def goto(self, url: str, cost: Cost = None, label: str | None = None) -> None:
         self._spend(cost)
-        self.pause()
+        waited = self.pause()
+        started = time.monotonic()
         response = self.page.goto(url, wait_until="domcontentloaded")
         self._settle()
-        self.check(response.status if response else None)
+        status = response.status if response else None
+        self.check(status)
+        self.log.info("  opened %s after a %.1fs pause%s; loaded in %.1fs, HTTP %s, checks ok",
+                      label or short_url(url), waited, f" ({cost})" if cost else "", time.monotonic() - started,
+                      status or "-")
 
-    def act(self, action: Callable[[], T], cost: Cost = None) -> T:
+    def act(self, action: Callable[[], T], cost: Cost = None, label: str = "page action") -> T:
         """Run a page interaction (a click, a scroll to the next page) at human pace, then check the result."""
         self._spend(cost)
-        self.pause()
+        waited = self.pause()
         result = action()
         self._settle()
         self.check()
+        self.log.info("  %s after a %.1fs pause%s; now at %s, checks ok", label, waited,
+                      f" ({cost})" if cost else "", short_url(self.page.url))
         return result
 
-    def pause(self) -> None:
-        self._sleep(self._rng.uniform(*self.delay_seconds))
+    def pause(self) -> float:
+        seconds = self._rng.uniform(*self.delay_seconds)
+        self._sleep(seconds)
+        return seconds
 
     def check(self, status: int | None = None) -> None:
         problem = detect_problem(self.page.url, status, self._visible_text(), self.page.content())
@@ -70,6 +88,7 @@ class Pacer:
             self.halt(problem)
 
     def halt(self, reason: str) -> None:
+        self.log.warning("  HALT at %s: %s", short_url(self.page.url), reason)
         raise Halt(reason, self._capture())
 
     def _settle(self) -> None:

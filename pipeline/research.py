@@ -7,6 +7,7 @@ and a pattern-guessed email is never better than "likely". Web pages are untrust
 
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -17,10 +18,10 @@ from sqlmodel import col, delete, select
 from db.models import Company, Finding, Lead, Score
 from pipeline.config import Research
 from pipeline.context import RunContext, now_iso
-from pipeline.llm import usage_cost
+from pipeline.llm import CallRecord, account_problem, store_calls, total_cost
 
 SOURCE = "claude_web"
-MAX_CONTINUATIONS = 6
+MAX_CONTINUATIONS = 3  # the first request plus up to two continuations of a paused search turn
 
 # People-search and data-broker sites are out of scope (PRD: business contact info only).
 BLOCKED_DOMAINS = [
@@ -132,27 +133,45 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
         .limit(min(settings.max_leads, ctx.config.icp.caps.deep_reads))  # research only what was deep-read
     ).all()
     spent, researched, reused = 0.0, 0, 0
-    for score in ranked:
+    for number, score in enumerate(ranked, 1):
         lead = ctx.session.get(Lead, score.lead_id)
         if _fresh(lead.last_researched_at, settings.refresh_days):
             reused += 1
+            ctx.log.info("research %d/%d: %s: reusing research from %s", number, len(ranked), lead.full_name,
+                         lead.last_researched_at[:16].replace("T", " "))
             continue
         if spent >= settings.max_usd_per_run:
             ctx.log.warning("research budget of $%.2f reached; %d leads not researched", settings.max_usd_per_run,
                             len(ranked) - researched - reused)
             break
         company = ctx.session.get(Company, lead.company_id) if lead.company_id else None
+        ctx.log.info("research %d/%d: %s (%s)", number, len(ranked), lead.full_name,
+                     company.name if company else "unknown company")
         try:
-            report, cost = research_lead(client, settings, lead_brief(lead, company))
-        except anthropic.AuthenticationError:
-            ctx.log.warning("the Anthropic API key was rejected; skipping research")
-            return
+            report, records = research_lead(client, settings, lead_brief(lead, company))
         except anthropic.APIError as exc:
+            problem = account_problem(exc)
+            if problem:
+                ctx.log.warning("%s; stopping research for this run", problem)
+                return
             ctx.log.warning("research failed for %s: %s", lead.full_name, exc)
             continue
+        cost = total_cost(records)
         spent += cost
         ctx.budget.add_llm_cost(cost)
-        ctx.log.info("researched %s: $%.2f", lead.full_name, cost)
+        store_calls(ctx.session, ctx.run.id, lead.id, "research", records)
+        for query in (q for r in records for q in r.queries):
+            ctx.log.info("  searched: %s", query)
+        for url in (u for r in records for u in r.fetched):
+            ctx.log.info("  read: %s", url)
+        ctx.log.info("  %d findings, %d searches, %d pages, %s tokens in (%s cached), $%.2f, %.0fs",
+                     len(report.findings) if report else 0, sum(r.web_searches for r in records),
+                     sum(r.web_fetches for r in records), f"{sum(r.input_tokens + r.cache_read_tokens for r in records):,}",
+                     f"{sum(r.cache_read_tokens for r in records):,}", cost, sum(r.seconds for r in records))
+        searches, fetches = sum(r.web_searches for r in records), sum(r.web_fetches for r in records)
+        if searches > settings.max_searches or fetches > settings.max_fetches:
+            ctx.log.warning("  over the per-lead limit after a paused turn continued: %d/%d searches, %d/%d pages",
+                            searches, settings.max_searches, fetches, settings.max_fetches)
         if report is None:
             ctx.log.warning("research for %s returned no findings record; it will be retried next run", lead.full_name)
             ctx.session.add(ctx.run)
@@ -163,23 +182,31 @@ def research(ctx: RunContext, client: Any | None = None) -> None:
     ctx.log.info("researched %d leads ($%.2f), reused %d recent", researched, spent, reused)
 
 
-def research_lead(client: Any, settings: Research, brief: str) -> tuple[ResearchReport | None, float]:
-    """One lead's research conversation. Returns the validated report (or None) and its cost in USD."""
-    tools = research_tools(settings)
+def research_lead(client: Any, settings: Research, brief: str) -> tuple[ResearchReport | None, list[CallRecord]]:
+    """One lead's research conversation. Returns the validated report (or None) and a record of every call."""
     messages: list[dict] = [{"role": "user", "content": brief}]
-    cost, nudged = 0.0, False
+    records: list[CallRecord] = []
+    nudged = False
     for _ in range(MAX_CONTINUATIONS):
+        # Each request gets a fresh max_uses, so a continued turn gets only what's left of the lead's allowance.
+        # The API's minimum is 1, so a continuation can overshoot by one; the stage logs it when that happens.
+        searches_left = max(1, settings.max_searches - sum(r.web_searches for r in records))
+        fetches_left = max(1, settings.max_fetches - sum(r.web_fetches for r in records))
+        tools = research_tools(settings, searches_left, fetches_left)
+        started = time.monotonic()
+        # Automatic prompt caching: each search step re-reads the conversation so far; cached re-reads bill at 10%.
         with client.messages.stream(
-            model=settings.model, max_tokens=16000, system=SYSTEM, tools=tools, messages=messages
+            model=settings.model, max_tokens=16000, system=SYSTEM, tools=tools, messages=messages,
+            cache_control={"type": "ephemeral"},
         ) as stream:
             response = stream.get_final_message()
-        cost += usage_cost(settings.model, response.usage)
+        records.append(CallRecord.from_response(settings.model, response, time.monotonic() - started))
         record = next((b for b in response.content if b.type == "tool_use" and b.name == "record_findings"), None)
         if record is not None:
             try:
-                return ResearchReport.model_validate(record.input), cost
+                return ResearchReport.model_validate(record.input), records
             except ValidationError:
-                return None, cost
+                return None, records
         if response.stop_reason == "pause_turn":
             # Server-side search loop paused; send the turn back unchanged and the API resumes it.
             messages = [messages[0], {"role": "assistant", "content": response.content}]
@@ -191,14 +218,17 @@ def research_lead(client: Any, settings: Research, brief: str) -> tuple[Research
             {"role": "user", "content": "Call record_findings now with what you found (an empty list is fine)."},
         ]
         nudged = True
-    return None, cost
+    return None, records
 
 
-def research_tools(settings: Research) -> list[dict]:
+def research_tools(settings: Research, searches: int | None = None, fetches: int | None = None) -> list[dict]:
+    """Basic web search and fetch, not the dynamic-filtering versions: measured on a real lead, dynamic filtering
+    let Claude fetch 7 pages against a limit of 3 and cost $0.38-1.07 a lead; the basic tools respect max_uses
+    and cost about $0.22 with prompt caching."""
     return [
-        {"type": "web_search_20260209", "name": "web_search", "max_uses": settings.max_searches,
+        {"type": "web_search_20250305", "name": "web_search", "max_uses": searches or settings.max_searches,
          "blocked_domains": BLOCKED_DOMAINS},
-        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": settings.max_fetches,
+        {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": fetches or settings.max_fetches,
          "max_content_tokens": settings.max_fetch_tokens, "blocked_domains": BLOCKED_DOMAINS},
         RECORD_FINDINGS,
     ]

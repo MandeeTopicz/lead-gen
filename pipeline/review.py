@@ -105,3 +105,13 @@ def run_in_progress(session: Session, paths: Paths) -> Run | None:
         return None
     except RunRefused:
         return session.exec(select(Run).where(Run.status == "running").order_by(col(Run.id).desc())).first()
+
+
+def log_tail(paths: Paths, run: Run, lines: int = 30) -> list[str]:
+    """The latest lines this run wrote to its log."""
+    log = paths.run_output_dir(run) / "run.log"
+    if not log.exists():
+        return []
+    marker = f" run {run.id}: "
+    mine = [line.rstrip() for line in log.read_text().splitlines() if marker in line]
+    return [line.replace(marker, " ", 1) for line in mine[-lines:]]

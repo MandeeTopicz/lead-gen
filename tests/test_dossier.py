@@ -118,3 +118,36 @@ def test_shipped_demo_sender_is_complete_and_flagged(paths):
     from pipeline.config import load_config
     sender = load_config(paths.config_dir).sender
     assert sender.demo and sender.missing_for_drafting() == []
+
+
+def test_research_trail_and_cost_report(paths):
+    from tests.test_research import FakeClient, record, response
+    from types import SimpleNamespace as NS
+    import tests.test_drafting as td
+
+    with_sender(paths)
+    searched = NS(type="server_tool_use", name="web_search", input={"query": "Hill Country Freight Hutto"})
+    fetched = NS(type="server_tool_use", name="web_fetch", input={"url": "https://hcf.example/about"})
+    researcher = FakeClient([response(searched, fetched, record([td.EMAIL]), searches=1)])
+
+    class Search:
+        def open(self, name): pass
+        def cards(self): return [td.JORDAN]
+        def next_page(self): return False
+
+    from pipeline.drafting import drafting
+    from pipeline.linkedin.searches import run_searches
+    from pipeline.research import research
+    from pipeline.run import start_run
+    from pipeline.stages import STAGES, Stage
+    swapped = {2: lambda ctx: None, 3: lambda ctx: run_searches(ctx, Search()), 6: lambda ctx: None,
+               7: lambda ctx: research(ctx, researcher), 9: lambda ctx: drafting(ctx, FakeWriter())}
+    run = start_run(paths, stages=[Stage(s.number, s.name, swapped.get(s.number, s.run), s.uses_linkedin)
+                                   for s in STAGES])
+    md = next(run_dir(paths, run).glob("*.md")).read_text()
+    assert "## Research trail" in md
+    assert "Searched: Hill Country Freight Hutto" in md and "Read: [hcf.example/about]" in md
+    digest = (paths.output_dir / run.started_at[:10] / f"digest-run{run.id}.md").read_text()
+    assert "## Where the time and money went" in digest
+    assert "| 7. research | completed |" in digest
+    assert "| Jordan Reyes | $" in digest

@@ -68,6 +68,8 @@ def test_run_history_page(paths, seeded, monkeypatch):
     app.sidebar.radio[0].set_value("Run history").run()
     assert not app.exception
     assert app.title[0].value == "Run history"
+    assert any(m.label == "Claude" for m in app.metric)  # run details for the finished run
+    assert "No run in progress" in " ".join(c.value for c in app.caption)
     assert any(b.label == "Run now" for b in app.sidebar.button)
 
 
@@ -98,3 +100,9 @@ def test_stale_running_run_is_cleared_and_live_one_is_shown(paths, seeded):
             assert review.run_in_progress(session, paths).status == "running"
         assert review.run_in_progress(session, paths) is None  # nothing holds it: stale, marked failed
         assert session.exec(select(Run).where(Run.status == "running")).first() is None
+
+
+def test_log_tail_is_this_runs_lines(paths, seeded):
+    lines = review.log_tail(paths, seeded)
+    assert lines and not any(f" run {seeded.id}: " in line for line in lines)  # prefix stripped
+    assert any("stage 10 dossiers: done" in line for line in lines)

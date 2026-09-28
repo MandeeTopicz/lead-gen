@@ -15,6 +15,7 @@ from sqlmodel import Session, col, select
 from db.models import Company, Finding, Lead, Post, Review, Run, Score, SearchHit
 from pipeline.collect import latest_cards
 from pipeline.config import Config
+from pipeline.costs import duration, lead_costs, stage_lines
 from pipeline.text import strip_emoji
 from pipeline.context import Paths
 
@@ -168,6 +169,18 @@ def render(digest: Digest, session: Session) -> str:
     if digest.cuts:
         lines += ["", f"## Fewer than {digest.warn_below} leads: what cut them", ""]
         lines += [f"- {reason}: {n}" for reason, n in digest.cuts]
+    stages = stage_lines(session, run.id)
+    if stages:
+        lines += ["", "## Where the time and money went", "",
+                  "| Stage | Status | Time | Claude |", "| --- | --- | ---: | ---: |"]
+        lines += [f"| {st.stage}. {st.name} | {st.status} | {duration(st.seconds)} | "
+                  f"{f'${st.cost_usd:.2f}' if st.cost_usd else '-'} |" for st in stages]
+        leads = lead_costs(session, run.id)
+        if leads:
+            lines += ["", "| Lead | Research | Searches | Pages read | Drafting | Total |",
+                      "| --- | ---: | ---: | ---: | ---: | ---: |"]
+            lines += [f"| {_cell(c.lead)} | ${c.research_usd:.2f} | {c.searches} | {c.pages_read} | "
+                      f"${c.drafting_usd:.2f} | ${c.total_usd:.2f} |" for c in leads]
     if digest.held_back:
         lines += ["", "## Held back", ""]
         lines += [f"- {_cell(lead.full_name)}: {strip_emoji(reason)}" for lead, reason in digest.held_back]

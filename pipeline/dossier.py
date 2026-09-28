@@ -14,6 +14,7 @@ from sqlmodel import Session, col, select
 from db.models import Dossier, Finding, OutreachStep, Post, Run
 from pipeline.config import Config
 from pipeline.context import Paths, RunContext
+from pipeline.costs import duration, research_trail
 from pipeline.digest import Digest, DigestRow, build_digest, write_digest
 from pipeline.documents import Block, Bullets, Heading, Para, Quote, Table, to_markdown, write_docx, write_pdf
 
@@ -158,6 +159,18 @@ def build_blocks(session: Session, run: Run, rank: int, row: DigestRow, config: 
             blocks.append(Para(meta))
             lines = ([f"Subject: {s.subject}", ""] if s.subject else []) + (s.body or "(no draft)").splitlines()
             blocks.append(Quote(lines))
+
+    # Research trail: what Claude searched and read for this lead, and what it cost.
+    trail = research_trail(session, run.id, lead.id)
+    blocks.append(Heading(2, "Research trail"))
+    if trail is None:
+        blocks.append(Para("Not researched in this run (reused earlier research, or the stage was skipped)."))
+    else:
+        blocks.append(Para(f"{trail['model']} · {len(trail['queries'])} searches · {len(trail['fetched'])} pages read · "
+                           f"{trail['tokens_in']:,} tokens in ({trail['tokens_cached']:,} from cache), "
+                           f"{trail['tokens_out']:,} out · ${trail['cost_usd']:.2f} · {duration(trail['seconds'])}"))
+        blocks.append(Bullets([f"Searched: {q}" for q in trail["queries"]]
+                              + [f"Read: {_link(u)}" for u in trail["fetched"]] or ["No searches recorded."]))
 
     # 11. Sources
     used = sorted({(f.source_url, f.found_at[:10]) for f in findings.values() if f.source_url})

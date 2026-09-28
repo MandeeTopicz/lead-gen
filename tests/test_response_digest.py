@@ -168,3 +168,19 @@ def test_research_findings_feed_the_response_score(paths):
     trigger = next(f for f in score.response_breakdown["factors"] if f["factor"] == "trigger")
     assert trigger["points"] == 7 and trigger["finding_ids"]
     assert "Opened a Hutto cross-dock." in digest_text(paths, run)  # the top reason
+
+
+def test_mutual_connections_alone_score_once(config):
+    result = score_response(inputs(mutual_connections=1, findings=[
+        finding(9, "affinity", "1 mutual connection on LinkedIn", provider="linkedin")]), config)
+    affinity = factors(result)["affinity"]
+    assert (affinity["points"], affinity["detail"]) == (10, "1 mutual connection")
+
+
+@pytest.mark.parametrize("text, points", [
+    ("Hiring movers, drivers, sales team members, and admin staff.", 0),
+    ("Hiring a Dispatch Operations Manager in Round Rock.", 8),
+    ("Open role: Warehouse Supervisor, second shift.", 8),
+])
+def test_hiring_trigger_needs_an_ops_role(config, text, points):
+    assert factors(score_response(inputs(findings=[finding(1, "hiring", text)]), config))["trigger"]["points"] == points

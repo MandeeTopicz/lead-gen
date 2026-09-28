@@ -47,8 +47,11 @@ def start_run(
     dry_run: bool = False,
     stages: Sequence[Stage] = STAGES,
     max_deep_reads: int | None = None,
+    watch: bool = False,
 ) -> Run:
     config = with_caps(load_config(paths.config_dir), deep_reads=max_deep_reads)
+    if watch:
+        config = watching(config)
     engine = make_engine(paths.db_path)
     with run_lock(paths.lock_path), Session(engine, expire_on_commit=False) as session:
         _fail_orphaned_runs(session)
@@ -63,7 +66,7 @@ def start_run(
         )
         session.add(run)
         session.commit()
-        _execute(config, paths, session, run, list(stages))
+        _execute(config, paths, session, run, list(stages), f"started run {run.id} ({trigger})")
         return run
 
 
@@ -77,13 +80,22 @@ def with_caps(config: Config, **caps: int | None) -> Config:
     return config.model_copy(update={"icp": icp})
 
 
+def watching(config: Config) -> Config:
+    """This run in a visible Chrome window, to watch the agent work. It takes focus while it runs."""
+    icp = config.icp.model_copy(update={"browser": config.icp.browser.model_copy(update={"headless": False})})
+    return config.model_copy(update={"icp": icp})
+
+
 def resume_run(
     paths: Paths,
     run_id: int | None = None,
     from_stage: int | None = None,
     stages: Sequence[Stage] = STAGES,
+    watch: bool = False,
 ) -> Run:
     config = load_config(paths.config_dir)
+    if watch:
+        config = watching(config)
     engine = make_engine(paths.db_path)
     with run_lock(paths.lock_path), Session(engine, expire_on_commit=False) as session:
         _fail_orphaned_runs(session)
@@ -113,11 +125,34 @@ def resume_run(
         run.halt_screenshot_path = None
         session.add(run)
         session.commit()
-        _execute(config, paths, session, run, plan)
+        resumed_at = next(s for s in stages if s.number == from_stage)
+        _execute(config, paths, session, run, plan,
+                 f"resumed run {run.id} from stage {resumed_at.number} {resumed_at.name}")
         return run
 
 
-def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: list[Stage]) -> None:
+def rescore_run(paths: Paths, run_id: int, stages: Sequence[Stage] = STAGES) -> Run:
+    """Recompute response and priority scores and rebuild the digest and dossiers for a finished run.
+    No LinkedIn and no Claude calls: drafts and research stay as they are."""
+    config = load_config(paths.config_dir)
+    engine = make_engine(paths.db_path)
+    with run_lock(paths.lock_path), Session(engine, expire_on_commit=False) as session:
+        _fail_orphaned_runs(session)
+        run = session.get(Run, run_id)
+        if run is None or run.status not in ("completed", "failed", "halted"):
+            raise RunRefused(f"run {run_id} isn't a finished run")
+        status = run.status
+        plan = [s for s in stages if s.number in (8, 10)]
+        run.status = "running"
+        session.add(run)
+        session.commit()
+        _execute(config, paths, session, run, plan, f"rescored run {run.id} (scores, digest, dossiers; no API calls)")
+        if status != "completed" and run.status == "completed":
+            run.halt_reason = None
+        return run
+
+
+def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: list[Stage], note: str) -> None:
     ctx = RunContext(
         config=config,
         paths=paths,
@@ -126,6 +161,7 @@ def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: lis
         budget=Budget(run, config.icp.caps),
         log=_run_logger(paths, run),
     )
+    ctx.log.info("──── %s ────", note)
     try:
         for stage in plan:
             record = session.get(RunStage, (run.id, stage.number)) or RunStage(
@@ -169,8 +205,8 @@ def _execute(config: Config, paths: Paths, session: Session, run: Run, plan: lis
         run.status = "completed"
         _finish_run(session, run)
         ctx.log.info(
-            "run %d completed: %d pages, %d deep reads, $%.2f LLM, $%.2f enrichment",
-            run.id, run.pages_viewed, run.profiles_read, run.llm_cost_usd, run.enrichment_cost_usd,
+            "run %d completed: %d result pages, %d deep reads, $%.2f Claude so far across this run's passes",
+            run.id, run.pages_viewed, run.profiles_read, run.llm_cost_usd,
         )
     finally:
         for closer in reversed(ctx.closers):

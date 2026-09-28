@@ -5,7 +5,7 @@ You log in yourself in a visible window; the profile keeps the session. No Linke
 
 import logging
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,13 +18,15 @@ from pipeline.linkedin.pacing import Pacer
 
 
 class LinkedInBrowser:
-    def __init__(self, playwright: Playwright, context: BrowserContext, page: Page):
+    def __init__(self, playwright: Playwright, context: BrowserContext, page: Page, trace_path: Path | None = None):
         self.playwright = playwright
         self.context = context
         self.page = page
+        self.trace_path = trace_path
 
     @classmethod
-    def open(cls, paths: Paths, settings: Browser, headless: bool | None = None) -> "LinkedInBrowser":
+    def open(cls, paths: Paths, settings: Browser, headless: bool | None = None,
+             trace_path: Path | None = None) -> "LinkedInBrowser":
         playwright = sync_playwright().start()
         try:
             context = playwright.chromium.launch_persistent_context(
@@ -38,10 +40,19 @@ class LinkedInBrowser:
             playwright.stop()
             raise
         context.set_default_timeout(settings.page_timeout_seconds * 1000)
+        if trace_path is not None:
+            # A replayable record of every page, click, and scroll: `uv run playwright show-trace <file>`.
+            context.tracing.start(screenshots=True, snapshots=True, title=trace_path.stem)
         page = context.pages[0] if context.pages else context.new_page()
-        return cls(playwright, context, page)
+        return cls(playwright, context, page, trace_path)
 
     def close(self) -> None:
+        try:
+            if self.trace_path is not None:
+                self.trace_path.parent.mkdir(parents=True, exist_ok=True)
+                self.context.tracing.stop(path=self.trace_path)
+        except Exception:
+            logging.getLogger("leadgen").exception("could not save the browser trace")
         try:
             self.context.close()
         finally:
@@ -54,7 +65,13 @@ def session_check(ctx: RunContext) -> None:
         ctx.log.info("dry run: not opening LinkedIn")
         return
     settings = ctx.config.icp.browser
-    browser = LinkedInBrowser.open(ctx.paths, settings)
+    trace = None
+    if ctx.config.icp.observability.browser_trace:
+        trace = ctx.output_dir / f"run{ctx.run.id}" / f"browser-trace-{datetime.now():%H%M%S}.zip"
+        ctx.log.info("recording a browser trace; replay it with: uv run playwright show-trace %s", trace)
+    if not settings.headless:
+        ctx.log.info("watch mode: a visible Chrome window will open")
+    browser = LinkedInBrowser.open(ctx.paths, settings, trace_path=trace)
     ctx.on_close(browser.close)
     pacer = Pacer(browser.page, ctx.budget, ctx.config.icp.caps.delay_seconds, ctx.output_dir, ctx.log)
     pacer.goto(settings.start_url)

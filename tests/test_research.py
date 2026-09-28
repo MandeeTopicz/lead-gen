@@ -18,6 +18,7 @@ from pipeline.research import (
     research,
     research_lead,
 )
+from pipeline.llm import total_cost
 from pipeline.config import load_config
 from pipeline.run import start_run
 from pipeline.stages import STAGES, Stage
@@ -98,14 +99,20 @@ def settings(paths):
     return load_config(paths.config_dir).icp.research
 
 
-def test_research_lead_returns_report_and_cost(settings):
-    client = FakeClient([response(text("Searching…"), record())])
-    report, cost = research_lead(client, settings, "brief")
+def test_research_lead_returns_report_and_call_records(settings):
+    searched = NS(type="server_tool_use", name="web_search", input={"query": "Jordan Reyes Hill Country Freight"})
+    fetched = NS(type="server_tool_use", name="web_fetch", input={"url": "https://hcf.example/contact"})
+    client = FakeClient([response(text("Searching…"), searched, fetched, record())])
+    report, records = research_lead(client, settings, "brief")
     assert len(report.findings) == len(FINDINGS)
     # Sonnet 5: 10k in x $2/M + 1k out x $10/M + 3 searches x $0.01
-    assert cost == pytest.approx(0.02 + 0.01 + 0.03)
+    assert total_cost(records) == pytest.approx(0.02 + 0.01 + 0.03)
+    assert records[0].queries == ["Jordan Reyes Hill Country Freight"]
+    assert records[0].fetched == ["https://hcf.example/contact"]
+    assert client.calls[0]["cache_control"] == {"type": "ephemeral"}
     tools = {t["name"]: t for t in client.calls[0]["tools"]}
-    assert tools["web_search"]["type"] == "web_search_20260209"
+    assert tools["web_search"]["type"] == "web_search_20250305"  # basic: max_uses is a hard limit
+    assert tools["web_fetch"]["type"] == "web_fetch_20250910"
     assert tools["web_search"]["max_uses"] == settings.max_searches
     assert tools["web_fetch"]["blocked_domains"] == BLOCKED_DOMAINS
     assert tools["web_fetch"]["max_content_tokens"] == settings.max_fetch_tokens
@@ -124,8 +131,8 @@ def test_pause_turn_resumes_without_a_new_user_message(settings):
 
 def test_nudges_once_then_gives_up(settings):
     client = FakeClient([response(text("Done."), stop="end_turn"), response(text("Still done."), stop="end_turn")])
-    report, cost = research_lead(client, settings, "brief")
-    assert report is None and len(client.calls) == 2 and cost > 0
+    report, records = research_lead(client, settings, "brief")
+    assert report is None and len(client.calls) == 2 and total_cost(records) > 0
     assert "record_findings" in client.calls[1]["messages"][-1]["content"]
 
 
@@ -171,9 +178,15 @@ def findings(paths):
 
 
 def test_stage_stores_findings_and_cost(paths):
+    from db.models import LlmCall
+
     run = run_with_research(paths, FakeClient([response(record())]))
     assert run.status == "completed"
     assert run.llm_cost_usd == pytest.approx(0.06)
+    with Session(make_engine(paths.db_path)) as session:
+        (call,) = session.exec(select(LlmCall)).all()
+        assert (call.stage, call.model, call.web_searches, call.cost_usd) == ("research", "claude-sonnet-5", 3,
+                                                                             pytest.approx(0.06))
     stored = findings(paths)
     kinds = sorted(f.kind for f in stored)
     assert kinds == ["company", "email", "news", "phone", "talk"]
@@ -226,3 +239,37 @@ def test_record_findings_schema_has_no_null_inside_a_string_enum():
                 walk(value)
 
     walk(RECORD_FINDINGS["input_schema"])
+
+
+def test_out_of_credits_stops_the_stage_after_one_call(paths):
+    import anthropic
+    import httpx2 as httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    error = anthropic.BadRequestError(
+        "Your credit balance is too low to access the Anthropic API.",
+        response=httpx.Response(400, request=request), body=None)
+
+    class Broke(FakeClient):
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            raise error
+
+    other = JORDAN.model_copy(update={"profile_url": "https://www.linkedin.com/sales/lead/ACwAAAtest2,N,x",
+                                      "full_name": "Sam Patel"})
+    client = Broke([])
+    run = run_with_research(paths, client, cards=(JORDAN, other))
+    assert run.status == "completed" and len(client.calls) == 1
+    log = (paths.output_dir / run.started_at[:10] / "run.log").read_text()
+    assert "out of credits" in log and "stopping research for this run" in log
+
+
+def test_continued_turn_gets_only_the_remaining_allowance(settings):
+    paused = NS(content=[text("…")], stop_reason="pause_turn",
+                usage=NS(input_tokens=100, output_tokens=10, cache_creation_input_tokens=0, cache_read_input_tokens=0,
+                         server_tool_use=NS(web_search_requests=3, web_fetch_requests=3)))
+    client = FakeClient([paused, response(record())])
+    research_lead(client, settings, "brief")
+    first, second = ({t["name"]: t for t in call["tools"]} for call in client.calls)
+    assert (first["web_search"]["max_uses"], first["web_fetch"]["max_uses"]) == (4, 3)
+    assert (second["web_search"]["max_uses"], second["web_fetch"]["max_uses"]) == (1, 1)  # 4-3 left; API minimum 1

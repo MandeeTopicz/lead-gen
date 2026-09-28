@@ -95,6 +95,10 @@ def test_session_check_passes_on_sales_navigator(paths, server):
     run = start_run(paths, stages=session_only())
     assert run.status == "completed"
     assert (paths.browser_profile_dir / "Default").exists()
+    (trace,) = (paths.output_dir / run.started_at[:10] / f"run{run.id}").glob("browser-trace-*.zip")
+    assert trace.stat().st_size > 1000
+    log = (paths.output_dir / run.started_at[:10] / "run.log").read_text()
+    assert "opened /sales/home after a" in log and "checks ok" in log
 
 
 def test_session_check_halts_on_redirect_to_checkpoint(paths, server):

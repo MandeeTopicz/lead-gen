@@ -16,14 +16,14 @@ LINKEDIN = "linkedin"
 
 def refresh_linkedin_evidence(session: Session, run_id: int, lead: Lead, card: Card, company: Company | None,
                               config: Config) -> None:
-    session.exec(delete(Finding).where(Finding.lead_id == lead.id, Finding.source_provider == LINKEDIN))
     profile = lead.profile_url
     found_at = now_iso()
+    wanted: list[Finding] = []
 
     def add(kind: str, value: str, source: str | None = profile, event_date: str | None = None) -> None:
-        session.add(Finding(lead_id=lead.id, company_id=company.id if company and kind == "company" else None,
-                            kind=kind, value=value, source_url=source, source_provider=LINKEDIN,
-                            confidence="verified", event_date=event_date, found_at=found_at, run_id=run_id))
+        wanted.append(Finding(lead_id=lead.id, company_id=company.id if company and kind == "company" else None,
+                              kind=kind, value=value, source_url=source, source_provider=LINKEDIN,
+                              confidence="verified", event_date=event_date, found_at=found_at, run_id=run_id))
 
     current = next((r for r in lead.experience or [] if not r.get("end")), None)
     since = f" since {current['start']}" if current and current.get("start") else ""
@@ -39,7 +39,8 @@ def refresh_linkedin_evidence(session: Session, run_id: int, lead: Lead, card: C
         if post.text:
             add("post", f"LinkedIn post: {post.text[:500]}", event_date=(post.posted_at or "")[:10] or None)
     if card.mutual_connections:
-        add("affinity", f"{card.mutual_connections} mutual connections on LinkedIn")
+        n = card.mutual_connections
+        add("affinity", f"{n} mutual connection{'' if n == 1 else 's'} on LinkedIn")
     for shared in shared_background(lead, config):
         add("affinity", f"Shared background with the sender: {shared}")
     if company is not None:
@@ -52,6 +53,14 @@ def refresh_linkedin_evidence(session: Session, run_id: int, lead: Lead, card: C
             direction = "grew" if company.headcount_growth_6mo > 0 else "shrank"
             add("company", f"{company.name} headcount {direction} {abs(company.headcount_growth_6mo):.0%} "
                            "in the last six months", source=company_url)
+
+    existing = session.exec(select(Finding).where(Finding.lead_id == lead.id, Finding.source_provider == LINKEDIN)).all()
+    def key(f: Finding) -> tuple:
+        return (f.kind, f.value, f.source_url or "", f.event_date or "")
+    if sorted(map(key, existing)) == sorted(map(key, wanted)):
+        return  # unchanged: keep the same rows (and ids), so drafts citing them stay valid
+    session.exec(delete(Finding).where(Finding.lead_id == lead.id, Finding.source_provider == LINKEDIN))
+    session.add_all(wanted)
     session.flush()
 
 

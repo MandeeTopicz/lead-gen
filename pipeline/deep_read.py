@@ -42,8 +42,10 @@ def deep_read(ctx: RunContext) -> None:
             reused += 1
             continue
         card = cards[lead.id]
+        ctx.log.info("deep read %d/%d: %s (match %.0f)", read + reused + 1, len(ranked), lead.full_name,
+                     score.match_score)
         try:
-            pacer.goto(card.profile_url, cost="deep_read")
+            pacer.goto(card.profile_url, cost="deep_read", label=f"profile of {lead.full_name}")
         except CapReached:
             break
         store_profile(ctx.session, lead, _parse(pacer, parse_lead_page, "lead"))
@@ -52,7 +54,8 @@ def deep_read(ctx: RunContext) -> None:
         if company and card.company_url and (
             company.industry is None or not _fresh(company.updated_at, caps.deep_read_refresh_days)
         ):
-            pacer.goto(card.company_url)  # part of this lead's deep read, not a second one
+            # Part of this lead's deep read, not a second one.
+            pacer.goto(card.company_url, label=f"company page of {company.name}")
             store_company(company, _parse(pacer, parse_company_page, "company"))
             ctx.session.add(company)
         ctx.session.add(ctx.run)

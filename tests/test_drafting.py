@@ -269,7 +269,19 @@ def test_style_is_tagged_from_posts(config):
     writer = FakeWriter()
     lead = Lead(profile_url="x", full_name="Jordan Reyes", about="Freight nerd.")
     from pipeline.drafting import tag_style
-    style, cost = tag_style(writer, config, lead, ["Peak season prep at our cross-dock!"])
-    assert style.formality == "casual" and cost > 0
+    style, calls = tag_style(writer, config, lead, ["Peak season prep at our cross-dock!"])
+    assert style.formality == "casual" and calls[0].cost_usd > 0 and calls[0].model == "claude-haiku-4-5"
     assert writer.calls[0]["model"] == "claude-haiku-4-5"
     assert "Peak season prep" in writer.calls[0]["messages"][0]["content"]
+
+
+def test_unchanged_leads_are_not_redrafted(paths):
+    from pipeline.run import resume_run
+    with_sender(paths)
+    run = run_pipeline(paths, FakeWriter())
+    writer = FakeWriter()
+    from pipeline.stages import STAGES, Stage
+    stages = [Stage(s.number, s.name, (lambda ctx: drafting(ctx, writer)) if s.number == 9 else s.run, s.uses_linkedin)
+              for s in STAGES]
+    resume_run(paths, run_id=run.id, from_stage=8, stages=stages)
+    assert writer.calls == []  # same evidence, drafts kept, style reused

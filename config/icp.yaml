@@ -74,7 +74,13 @@ response_points:
   activity: { within_7_days: 25, within_30_days: 18, within_90_days: 8 }
   affinity: { shared_connections: 10, shared_background: 10 }
   local: 15
-  trigger: { hiring: 8, news: 7, news_within_days: 90 }
+  trigger:
+    hiring: 8
+    news: 7
+    news_within_days: 90
+    # Hiring only counts when the opening is an ops or logistics role (matched as word starts in the finding).
+    hiring_role_terms: [operations, logistics, dispatch, warehouse, fleet, transportation, supply chain,
+                        distribution, fulfillment, yard, freight, shipping]
   reach: { verified_email: 6, phone: 4, connection_or_open_profile: 5 }
   new_in_role: { points: 10, within_months: 12 }
   labels: { high: 70, medium: 45 }
@@ -106,8 +112,8 @@ llm:
 
 # Stage 7: Claude researches each top lead with its built-in web search and web fetch (no other vendors).
 research:
-  model: claude-sonnet-5
-  max_leads: 25            # best-matching leads that passed the gates
+  model: claude-sonnet-5   # ~$0.22/lead measured; claude-haiku-4-5 ~$0.10/lead with thinner findings
+  max_leads: 25            # best-matching leads that passed the gates (and were deep-read)
   max_searches: 4          # per lead
   max_fetches: 3           # per lead (company site about, contact, and careers pages)
   max_fetch_tokens: 6000   # cap on each fetched page's content; uncapped pages made research ~$0.60 a lead
@@ -117,6 +123,11 @@ research:
 # Stage 9: communication style (fast model) and reasons, summaries, and drafts (writer model).
 drafting:
   max_usd_per_run: 5.0
+
+observability:
+  # Record every page, click, and scroll of each run: output/<date>/run<N>/browser-trace-*.zip.
+  # Replay with `uv run playwright show-trace <file>`. Traces include screenshots of the pages the agent saw.
+  browser_trace: true
 
 # One LinkedIn draft per lead for now. The full sequence is 10 LinkedIn touches, then 2 emails and 2 calls
 # from week 6; drafting cost and time scale with the number of touches.

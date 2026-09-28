@@ -4,6 +4,7 @@ Read each digest lead's dossier, copy drafts, mark good fit / not a fit, and tra
 Nothing here sends anything; you send every message yourself.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 from sqlmodel import Session
 
 from db import make_engine
-from pipeline import review
+from pipeline import costs, review
 from pipeline.context import Paths
 from pipeline.dossier import CHANNEL_NAMES
 from pipeline.text import strip_emoji
@@ -128,8 +129,10 @@ def run_controls() -> None:
 
 def history_page() -> None:
     st.title("Run history")
+    live_run()
     with session() as s:
         runs = review.runs(s)
+    st.subheader("All runs")
     st.caption("Manual runs are capped per day (icp.yaml caps). A halted run needs you: see its reason and "
                "screenshot below, fix it (usually `uv run leadgen login`), then `uv run leadgen resume`.")
     st.dataframe(
@@ -139,10 +142,61 @@ def history_page() -> None:
          for r in runs],
         hide_index=True, use_container_width=True,
     )
-    for r in runs:
-        if r.status == "halted" and r.halt_screenshot_path and Path(r.halt_screenshot_path).exists():
-            with st.expander(f"Run {r.id} halted: {r.halt_reason}"):
-                st.image(r.halt_screenshot_path)
+    finished = [r for r in runs if r.status != "running"]
+    if finished:
+        chosen = st.selectbox("Run details", finished, format_func=lambda r: f"Run {r.id} · {r.status} · "
+                              f"{r.started_at[:16].replace('T', ' ')}")
+        with session() as s:
+            run_detail(s, chosen)
+
+
+@st.fragment(run_every="5s")
+def live_run() -> None:
+    """Refreshes itself every few seconds while a run is going."""
+    with session() as s:
+        running = review.run_in_progress(s, paths)
+        if running is None:
+            st.caption("No run in progress. Start one with Run now in the sidebar.")
+            return
+        st.subheader(f"Run {running.id} in progress")
+        run_detail(s, running, live=True)
+
+
+def run_detail(s, run, live: bool = False) -> None:
+    lines = costs.stage_lines(s, run.id)
+    current = next((l for l in lines if l.status == "running"), None)
+    started = datetime.fromisoformat(run.started_at)
+    cols = st.columns(5)
+    cols[0].metric("Stage", f"{current.stage}. {current.name}" if current else run.status)
+    cols[1].metric("Elapsed" if live else "Took", costs.duration(
+        ((datetime.now().astimezone() if live or not run.finished_at else datetime.fromisoformat(run.finished_at))
+         - started).total_seconds()))
+    cols[2].metric("Result pages", run.pages_viewed)
+    cols[3].metric("Deep reads", run.profiles_read)
+    cols[4].metric("Claude", f"${run.llm_cost_usd:.2f}")
+    st.dataframe([{"stage": f"{l.stage}. {l.name}", "status": l.status, "time": costs.duration(l.seconds),
+                   "Claude $": round(l.cost_usd, 2) if l.cost_usd else None} for l in lines],
+                 hide_index=True, use_container_width=True)
+    if run.halt_reason:
+        st.warning(f"{run.status}: {run.halt_reason}")
+    if run.status == "halted" and run.halt_screenshot_path and Path(run.halt_screenshot_path).exists():
+        st.image(run.halt_screenshot_path)
+    tail = review.log_tail(paths, run, 25 if live else 60)
+    with st.expander("Log", expanded=live):
+        st.code("\n".join(tail) or "(no log lines yet)", language=None)
+    if live:
+        return
+    per_lead = costs.lead_costs(s, run.id)
+    if per_lead:
+        st.markdown("**Claude cost per lead**")
+        st.dataframe([{"lead": strip_emoji(c.lead), "research $": round(c.research_usd, 2), "searches": c.searches,
+                       "pages read": c.pages_read, "drafting $": round(c.drafting_usd, 2),
+                       "total $": round(c.total_usd, 2)} for c in per_lead],
+                     hide_index=True, use_container_width=True)
+    trace_files = sorted((paths.run_output_dir(run) / f"run{run.id}").glob("browser-trace-*.zip"))
+    if trace_files:
+        st.markdown("**Browser trace** (every page, click, and scroll, with screenshots). Replay it with:")
+        st.code(f"uv run playwright show-trace {trace_files[-1]}", language="bash")
 
 
 page = st.sidebar.radio("Page", ["Digest", "Run history"])

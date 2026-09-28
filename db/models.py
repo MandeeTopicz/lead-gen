@@ -199,3 +199,25 @@ class Review(SQLModel, table=True):
     sequence_status: str | None = None
     notes: str | None = None
     updated_at: str | None = None
+
+
+class LlmCall(SQLModel, table=True):
+    """One Claude API call: what it cost, what it read. Feeds the research trail and the cost report."""
+
+    __tablename__ = "llm_calls"
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: int | None = Field(default=None, foreign_key="runs.id")
+    lead_id: int | None = Field(default=None, foreign_key="leads.id")
+    stage: str  # research, style, drafting
+    model: str
+    input_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    output_tokens: int = 0
+    web_searches: int = 0
+    web_fetches: int = 0
+    cost_usd: float = 0
+    seconds: float = 0
+    detail: dict | None = json_column()  # research: {"queries": [...], "fetched": [...]}
+    created_at: str

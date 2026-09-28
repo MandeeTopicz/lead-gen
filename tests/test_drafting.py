@@ -43,9 +43,23 @@ def with_sender(paths):
 # --- plan and checks
 
 
+def full_sequence(config):
+    seq = config.icp.sequence.model_copy(update={
+        "linkedin": config.icp.sequence.linkedin.model_copy(update={"touches": 10}),
+        "email": config.icp.sequence.email.model_copy(update={"touches": 2}),
+        "calls": config.icp.sequence.calls.model_copy(update={"touches": 2}),
+    })
+    return config.model_copy(update={"icp": config.icp.model_copy(update={"sequence": seq})})
+
+
+def test_shipped_config_drafts_one_linkedin_touch(config):
+    plan = plan_sequence(date(2026, 9, 28), config, connected=False, local=True, has_email=True, has_phone=True)
+    assert [(s.code, s.channel) for s in plan] == [("L1", "linkedin_connect")]
+
+
 def test_plan_has_ten_linkedin_touches_then_email_and_calls(config):
     start = date(2026, 9, 28)  # a Monday
-    plan = plan_sequence(start, config, connected=False, local=True, has_email=True, has_phone=True)
+    plan = plan_sequence(start, full_sequence(config), connected=False, local=True, has_email=True, has_phone=True)
     codes = [s.code for s in plan]
     assert codes == [f"L{i}" for i in range(1, 11)] + ["E1", "E2", "C1", "C2"]
     assert plan[0].channel == "linkedin_connect" and plan[1].channel == "inmail"
@@ -58,7 +72,8 @@ def test_plan_has_ten_linkedin_touches_then_email_and_calls(config):
 
 
 def test_plan_without_contact_info_or_connection(config):
-    plan = plan_sequence(date(2026, 9, 28), config, connected=True, local=False, has_email=False, has_phone=False)
+    plan = plan_sequence(date(2026, 9, 28), full_sequence(config), connected=True, local=False, has_email=False,
+                         has_phone=False)
     assert [s.code for s in plan] == [f"L{i}" for i in range(1, 11)]
     assert plan[0].channel == "linkedin_message" and plan[1].channel == "linkedin_message"
     assert plan[6].angle == "A 15-minute call"
@@ -171,7 +186,7 @@ def stored(paths, run):
         return steps, score, lead, findings
 
 
-def test_stage_drafts_the_full_sequence_with_sources(paths):
+def test_stage_drafts_the_full_sequence_with_sources(paths, full_sequence):
     with_sender(paths)
     run = run_pipeline(paths, FakeWriter())
     assert run.status == "completed"
@@ -190,7 +205,7 @@ def test_stage_drafts_the_full_sequence_with_sources(paths):
     assert run.llm_cost_usd > 0
 
 
-def test_no_email_or_call_steps_without_published_contact_info(paths):
+def test_no_email_or_call_steps_without_published_contact_info(paths, full_sequence):
     with_sender(paths)
     guessed = {**EMAIL, "email_basis": "pattern"}
     run = run_pipeline(paths, FakeWriter(), findings=(guessed,))

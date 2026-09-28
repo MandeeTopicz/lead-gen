@@ -118,7 +118,9 @@ research:
 drafting:
   max_usd_per_run: 5.0
 
+# One LinkedIn draft per lead for now. The full sequence is 10 LinkedIn touches, then 2 emails and 2 calls
+# from week 6; drafting cost and time scale with the number of touches.
 sequence:
-  linkedin: { touches: 10, per_week: 2, inmail_fallback_after_days: 5 }
-  email: { touches: 2, start_week: 6 }
-  calls: { touches: 2, start_week: 6 }
+  linkedin: { touches: 1, per_week: 2, inmail_fallback_after_days: 5 }
+  email: { touches: 0, start_week: 6 }
+  calls: { touches: 0, start_week: 6 }

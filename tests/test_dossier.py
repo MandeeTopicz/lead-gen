@@ -16,7 +16,7 @@ def run_dir(paths, run):
     return paths.output_dir / run.started_at[:10] / f"run{run.id}"
 
 
-def test_dossier_has_every_section_in_three_formats(paths):
+def test_dossier_has_every_section_in_three_formats(paths, full_sequence):
     with_sender(paths)
     run = run_pipeline(paths, FakeWriter())
     files = sorted(run_dir(paths, run).iterdir())
@@ -48,7 +48,7 @@ def test_digest_links_each_dossier(paths):
     assert f"[open](run{run.id}/01-jordan-reyes-hill-country-freight.md)" in digest
 
 
-def test_flagged_drafts_say_why(paths):
+def test_flagged_drafts_say_why(paths, full_sequence):
     with_sender(paths)
 
     class Stubborn(FakeWriter):

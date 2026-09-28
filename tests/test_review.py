@@ -16,7 +16,7 @@ APP = REPO_ROOT / "app" / "review.py"
 
 
 @pytest.fixture
-def seeded(paths):
+def seeded(paths, full_sequence):
     with_sender(paths)
     return run_pipeline(paths, FakeWriter())
 

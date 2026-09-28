@@ -81,8 +81,8 @@ Rules:
    connections, shared history, familiarity, results, or clients. Facts about the sender come only from the
    sender block.
 5. No pressure tactics: no false urgency, fake scarcity, or guilt. Persuasion comes from relevance.
-6. Respect each step's length limit and angle. Every step uses a different angle; the sequence should read as
-   ten distinct, respectful touches, never a nag.
+6. Respect each step's length limit and angle. When there are several steps, each uses a different angle; the
+   sequence should read as distinct, respectful touches, never a nag.
 7. Write finished text: no placeholders like [Name] or {company}. Don't add an email signature or opt-out line;
    those are added automatically.
 8. Call steps are written as "Opener: ..." (at most three sentences) followed by "Voicemail: ...".
